@@ -365,6 +365,66 @@ button:disabled {
 .advisor-deck-card.in-hand { opacity: 0.25; }
 .advisor-deck-card:disabled:not(.selected):not(.in-hand) { opacity: 0.35; }
 .advisor-deck-card.selected:disabled { opacity: 0.85; cursor: default; }
+/* Asking what an opponent did */
+.advisor-ask {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  margin-bottom: 18px;
+}
+.advisor-ask > .muted { font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; }
+.advisor-ask > strong {
+  font-family: var(--font-display);
+  font-size: clamp(30px, 4vw, 40px);
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.advisor-ask-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.advisor-ask-buttons > button,
+.advisor-ask-raise button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 10px 16px;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  transition: border-color 0.12s, background 0.12s;
+}
+.advisor-ask-buttons > button:hover, .advisor-ask-raise button:hover { border-color: var(--gold); }
+.advisor-ask-buttons > button:focus-visible, .advisor-ask-raise button:focus-visible, .advisor-ask-raise input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.advisor-ask-buttons > button.allin { border-color: rgb(227 0 27 / 0.6); background: rgb(227 0 27 / 0.18); }
+.advisor-ask-raise {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 0 0 0 12px;
+  font-size: 14px;
+}
+.advisor-ask-raise input {
+  width: 64px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  padding: 6px 4px;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+.advisor-ask-raise button { border-width: 0 0 0 1px; border-radius: 0 7px 7px 0; }
+.advisor-ask > small.muted { font-size: 12px; letter-spacing: 0; text-transform: none; }
+.advisor-board-head .advisor-seat { flex: 1; margin: 0; }
+.advisor-seat button:disabled { opacity: 0.6; cursor: default; }
+.advisor-seat button.on:disabled { opacity: 1; }
 .advisor-hand-input { display: block; }
 .advisor-hand-input > span {
   display: block;

@@ -2,17 +2,24 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ACTIONS, EQUITY_FEATURE, EQUITY_ITERATIONS, actionTable, featurize, type Observation, type SeatObs } from "@/ai/agent";
+import { ACTIONS, EQUITY_FEATURE, EQUITY_ITERATIONS, actionTable, featurize, observe, type ConcreteAction } from "@/ai/agent";
 import { RANKS as RANK_ORDER, SUITS, SUIT_SYMBOL, cardKey, rankLabel, type Card, type Rank, type Suit } from "@/lib/poker/cards";
+import { advance, applyAction, createGame, legalActions, potTotal, startHand, type GameState } from "@/lib/poker/engine";
 
 type Seat = "btn" | "sb" | "bb";
-
-const SEATS: { id: Seat; name: string; spot: string; summary: string }[] = [
-  { id: "btn", name: "Button", spot: "No blind, 3 players, first to act", summary: "Button, 3 players, no blind posted" },
-  { id: "sb", name: "Small blind", spot: "Heads-up, you open the action", summary: "Small blind, heads-up, 25 BB deep" },
-  { id: "bb", name: "Big blind", spot: "Heads-up, facing a min-raise to 2 BB", summary: "Big blind, heads-up, facing 2 BB" },
-];
 type MoveKind = "fold" | "call" | "raise" | "allin";
+
+const SEATS: { id: Seat; name: string; spot: string }[] = [
+  { id: "btn", name: "Button", spot: "No blind, first to act" },
+  { id: "sb", name: "Small blind", spot: "Acts second preflop" },
+  { id: "bb", name: "Big blind", spot: "Acts last preflop" },
+];
+/** Seat the hero is in on the following hand, once the button has moved one seat. */
+const NEXT_SEAT: Record<Seat, Seat> = { btn: "bb", bb: "sb", sb: "btn" };
+
+const HERO = 0;
+const STACK = 500;
+const BB = 20;
 
 interface LayerJson {
   in: number;
@@ -52,7 +59,7 @@ function parseHand(value: string): [Card, Card] | null {
   }
 
   // Standard shorthand, e.g. AKs, AKo, or TT. Exact suit choices do not
-  // matter to this preflop policy beyond whether the cards are suited.
+  // matter to this policy beyond whether the cards are suited.
   const shorthand = hand.match(/^([2-9tjqka])([2-9tjqka])([so])?$/);
   if (!shorthand) return null;
   const first = RANKS[shorthand[1]];
@@ -79,65 +86,15 @@ function matrixHand(row: number, column: number): [Card, Card] {
   return [{ rank: columnRank, suit: "s" }, { rank: rowRank, suit: "h" }];
 }
 
-function preflopObservation(hole: Card[], seat: Seat): Observation {
-  if (seat === "btn") {
-    // Three players, 25 BB each, blinds just posted. Seats follow action order:
-    // hero on the button, then the small blind, then the big blind.
-    return {
-      seats: [
-        { stack: 500, bet: 0, folded: false, out: false, allIn: false, dealer: true, lastAction: "" },
-        { stack: 490, bet: 10, folded: false, out: false, allIn: false, dealer: false, lastAction: "SB" },
-        { stack: 480, bet: 20, folded: false, out: false, allIn: false, dealer: false, lastAction: "BB" },
-      ],
-      hole: hole.map(cardKey),
-      board: [],
-      sb: 10,
-      bb: 20,
-      level: 0,
-      pot: 30,
-      canCheck: false,
-      canRaise: true,
-      minRaiseTo: 40,
-      maxRaiseTo: 500,
-    };
-  }
-  const isSmallBlind = seat === "sb";
-  // The trained policy always has three seat inputs. The third seat represents
-  // the eliminated player in this heads-up, 25 BB decision.
-  return {
-    seats: [
-      {
-        stack: isSmallBlind ? 490 : 480,
-        bet: isSmallBlind ? 10 : 20,
-        folded: false,
-        out: false,
-        allIn: false,
-        dealer: isSmallBlind,
-        lastAction: isSmallBlind ? "SB" : "BB",
-      },
-      {
-        stack: isSmallBlind ? 480 : 460,
-        bet: isSmallBlind ? 20 : 40,
-        folded: false,
-        out: false,
-        allIn: false,
-        dealer: !isSmallBlind,
-        lastAction: isSmallBlind ? "BB" : "Raise",
-      },
-      { stack: 0, bet: 0, folded: false, out: true, allIn: false, dealer: false, lastAction: "" },
-    ],
-    hole: hole.map(cardKey),
-    board: [],
-    sb: 10,
-    bb: 20,
-    level: 0,
-    pot: isSmallBlind ? 30 : 60,
-    canCheck: false,
-    canRaise: true,
-    minRaiseTo: isSmallBlind ? 40 : 60,
-    maxRaiseTo: 500,
-  };
+function parseBoard(value: string): Card[] | null {
+  const text = value.toLowerCase().replace(/\s+/g, "");
+  if (text === "") return [];
+  if (!/^(?:[2-9tjqka][shdc]){1,5}$/.test(text)) return null;
+  const cards = (text.match(/[2-9tjqka][shdc]/g) ?? []).map((key) => ({ rank: RANKS[key[0]], suit: key[1] as Suit }));
+  return new Set(cards.map(cardKey)).size === cards.length ? cards : null;
 }
+
+/* ------------------------------------------------------------------ model */
 
 function runPolicy(model: Model, input: number[], mask: boolean[]) {
   let values = Float32Array.from(input);
@@ -158,50 +115,8 @@ function runPolicy(model: Model, input: number[], mask: boolean[]) {
   return weights.map((weight) => weight / total);
 }
 
-/* ----------------------------------------------------------- hand flow */
-
-type Street = "preflop" | "flop" | "turn" | "river" | "over";
-const STREET_CARDS: Record<Street, number> = { preflop: 0, flop: 3, turn: 4, river: 5, over: 5 };
-/** Board cards dealt before the current street, which can no longer change. */
-const lockedCards = (street: Street) => (street === "flop" ? 0 : street === "turn" ? 3 : street === "river" ? 4 : 5);
-const STREET_NAME: Record<Street, string> = { preflop: "Preflop", flop: "Flop", turn: "Turn", river: "River", over: "Hand over" };
-
-/** The hand in progress after at least one street has been played. */
-interface Hand {
-  street: Street;
-  board: Card[];
-  heroStack: number;
-  oppStack: number;
-  pot: number;
-  history: string[];
-  outcome: string | null;
-}
-
-/** Postflop spot: a new street, nobody has bet yet, and the opponent checks to the hero when they are in position. */
-function postflopObservation(hole: Card[], seat: Seat, hand: Hand): Observation {
-  const heroDealer = seat !== "bb";
-  const hero: SeatObs = { stack: hand.heroStack, bet: 0, folded: false, out: false, allIn: false, dealer: heroDealer, lastAction: "" };
-  const opp: SeatObs = { stack: hand.oppStack, bet: 0, folded: false, out: false, allIn: false, dealer: !heroDealer, lastAction: heroDealer ? "Check" : "" };
-  const gone: SeatObs = seat === "btn"
-    ? { stack: 490, bet: 0, folded: true, out: false, allIn: false, dealer: false, lastAction: "Fold" }
-    : { stack: 0, bet: 0, folded: false, out: true, allIn: false, dealer: false, lastAction: "" };
-  return {
-    seats: seat === "btn" ? [hero, gone, opp] : [hero, opp, gone],
-    hole: hole.map(cardKey),
-    board: hand.board.slice(0, STREET_CARDS[hand.street]).map(cardKey),
-    sb: 10,
-    bb: 20,
-    level: 0,
-    pot: hand.pot,
-    canCheck: true,
-    canRaise: hand.heroStack > 0 && hand.oppStack > 0,
-    minRaiseTo: Math.min(20, hand.heroStack),
-    maxRaiseTo: hand.heroStack,
-  };
-}
-
-function advise(model: Model, hole: [Card, Card], seat: Seat, hand: Hand | null) {
-  const observation = hand && hand.street !== "preflop" ? postflopObservation(hole, seat, hand) : preflopObservation(hole, seat);
+function advise(model: Model, game: GameState) {
+  const observation = observe(game, HERO);
   const features = featurize(observation, EQUITY_ITERATIONS.play);
   const { actions, mask } = actionTable(observation);
   const probabilities = runPolicy(model, features, mask);
@@ -209,24 +124,29 @@ function advise(model: Model, hole: [Card, Card], seat: Seat, hand: Hand | null)
   return { observation, actions, mask, probabilities, best, equity: features[EQUITY_FEATURE] };
 }
 
-type Action = ReturnType<typeof actionTable>["actions"][number];
+type Advice = ReturnType<typeof advise>;
 
-function moveKind(action: Action, obs: Observation): MoveKind {
+function moveKind(action: ConcreteAction, advice: Advice): MoveKind {
   if (action.type === "fold") return "fold";
   if (action.type === "check" || action.type === "call") return "call";
-  return action.amount === obs.maxRaiseTo ? "allin" : "raise";
+  return action.amount === advice.observation.maxRaiseTo ? "allin" : "raise";
 }
 
-function describeMove(action: Action, obs: Observation) {
+const bbText = (chips: number) => `${+(chips / BB).toFixed(2)} BB`;
+
+function describeMove(action: ConcreteAction, advice: Advice) {
+  const obs = advice.observation;
+  const currentBet = Math.max(...obs.seats.map((seat) => seat.bet));
   if (action.type === "fold") return "Fold";
   if (action.type === "check") return "Check";
-  if (action.type === "call") return `Call ${(Math.max(...obs.seats.map((seat) => seat.bet)) - obs.seats[0].bet) / obs.bb} BB`;
+  if (action.type === "call") return `Call ${bbText(currentBet - obs.seats[0].bet)}`;
   if (action.amount === obs.maxRaiseTo) return "All-in";
-  return `${Math.max(...obs.seats.map((seat) => seat.bet)) === 0 ? "Bet" : "Raise to"} ${(action.amount ?? 0) / obs.bb} BB`;
+  return `${currentBet === 0 ? "Bet" : "Raise to"} ${bbText(action.amount ?? 0)}`;
 }
 
 /** Why a move has the size it has: the policy only knows these fixed sizes. */
-function sizeHint(index: number, action: Action, obs: Observation): string {
+function sizeHint(index: number, action: ConcreteAction, advice: Advice): string {
+  const obs = advice.observation;
   const toCall = Math.max(...obs.seats.map((seat) => seat.bet)) - obs.seats[0].bet;
   if (action.type === "fold") return "";
   if (action.type === "check") return "no chips";
@@ -236,64 +156,53 @@ function sizeHint(index: number, action: Action, obs: Observation): string {
   return `${label} · ${chips} chips`;
 }
 
-const bbText = (chips: number) => `${+(chips / 20).toFixed(2)} BB`;
+/* ------------------------------------------------------------------- game */
 
-/**
- * Apply the hero's move and move on to the next street. Opponents are
- * assumed to call a raise or bet and to check otherwise; on the button the
- * small blind folds and the big blind continues.
- */
-function playMove(seat: Seat, hand: Hand | null, obs: Observation, action: Action): Hand {
-  const street: Street = hand?.street ?? "preflop";
-  const next: Street = street === "preflop" ? "flop" : street === "flop" ? "turn" : street === "turn" ? "river" : "over";
-  const hero = obs.seats[0];
-  const opp = obs.seats.find((s) => !s.out && !s.folded && s !== hero)!;
-  const base = { board: hand?.board ?? [], history: hand?.history ?? [] };
-
-  if (action.type === "fold") {
-    return { ...base, street: "over", heroStack: hero.stack, oppStack: opp.stack, pot: obs.pot, history: [...base.history, `${STREET_NAME[street]}: you folded`], outcome: "You folded. The hand is over." };
-  }
-  const currentBet = Math.max(...obs.seats.map((s) => s.bet));
-  const heroTotal = action.type === "raise" ? (action.amount ?? currentBet) : currentBet;
-  const oppTotal = Math.min(heroTotal, opp.stack + opp.bet);
-  const heroStack = hero.stack + hero.bet - heroTotal;
-  const oppStack = opp.stack + opp.bet - oppTotal;
-  // obs.pot already holds every chip in the middle, including the blinds.
-  const pot = obs.pot - hero.bet - opp.bet + heroTotal + oppTotal;
-  const allIn = heroStack === 0 || oppStack === 0;
-  const oppName = street === "preflop" ? (seat === "sb" ? "big blind" : seat === "bb" ? "small blind" : "big blind") : "opponent";
-  const oppDid = action.type === "check" || (action.type === "call" && seat !== "bb" && street === "preflop") ? "checked" : "called";
-  const reply = `${seat === "btn" && street === "preflop" ? "small blind folded, " : ""}${oppName} ${oppDid}`;
-  const did = action.type === "check" ? "checked"
-    : action.type === "call" ? `called ${bbText(heroTotal - hero.bet)}`
-    : heroTotal === hero.stack + hero.bet ? "went all-in"
-    : `${currentBet === 0 ? "bet" : "raised to"} ${bbText(heroTotal)}`;
-  const line = `${STREET_NAME[street]}: you ${did}, ${reply}`;
-  const history = [...base.history, line];
-  if (allIn) return { ...base, street: "over", heroStack, oppStack, pot, history, outcome: street === "river" ? `All-in showdown for ${bbText(pot)}.` : `All-in for ${bbText(pot)}. No more decisions: run out the board and see who wins.` };
-  if (next === "over") return { ...base, street: "over", heroStack, oppStack, pot, history, outcome: `Showdown for ${bbText(pot)}.` };
-  return { ...base, street: next, heroStack, oppStack, pot, history, outcome: null };
+/** A fresh 3-handed hand, 25 BB each at 10/20, with the hero in the chosen seat. */
+function newHand(seat: Seat): GameState {
+  const game = createGame(["You", "Player 2", "Player 3"], STACK, { heroIndex: HERO });
+  // startHand moves the button one seat before dealing.
+  const dealer = seat === "btn" ? 2 : seat === "sb" ? 1 : 0;
+  return startHand({ ...game, dealer }, 0);
 }
 
-function parseBoard(value: string): Card[] | null {
-  const text = value.toLowerCase().replace(/\s+/g, "");
-  if (text === "") return [];
-  const matches = text.match(/^(?:[2-9tjqka][shdc]){1,5}$/);
-  if (!matches) return null;
-  const cards = (text.match(/[2-9tjqka][shdc]/g) ?? []).map((key) => ({ rank: RANKS[key[0]], suit: key[1] as Suit }));
-  const keys = new Set(cards.map(cardKey));
-  return keys.size === cards.length ? cards : null;
+/** The same hand with the hero holding the chosen cards (the engine dealt random ones). */
+function withHole(game: GameState, hole: Card[]): GameState {
+  if (hole.length !== 2) return game;
+  return { ...game, players: game.players.map((player) => (player.id === HERO ? { ...player, hole: hole.slice() } : player)) };
 }
+
+function seatName(game: GameState, id: number): string {
+  return id === game.dealer ? "Button" : id === game.sbSeat ? "Small blind" : "Big blind";
+}
+
+const BOARD_NEEDED: Record<GameState["street"], number> = { preflop: 0, flop: 3, turn: 4, river: 5 };
+const STREET_NAME: Record<GameState["street"], string> = { preflop: "Preflop", flop: "Flop", turn: "Turn", river: "River" };
+
+/** Close the street when betting is over and deal the next one; its cards are then chosen by the user. */
+function settle(game: GameState): GameState {
+  if (game.phase !== "streetEnd" || game.street === "river") return game;
+  const before = game.board.length;
+  const next = advance(game);
+  return { ...next, board: next.board.slice(0, before) };
+}
+
+function historyLines(game: GameState): string[] {
+  return game.history.map((entry) => {
+    const who = entry.player === HERO ? "You" : seatName(game, entry.player);
+    const verb = entry.player === HERO ? { fold: "fold", check: "check", call: "call", bet: "bet", raise: "raise to" } : { fold: "folds", check: "checks", call: "calls", bet: "bets", raise: "raises to" };
+    const amount = entry.type === "fold" || entry.type === "check" ? "" : ` ${bbText(entry.to)}`;
+    return `${STREET_NAME[entry.street]} · ${who} ${entry.allIn ? (entry.player === HERO ? "go" : "goes") + " all-in for" : verb[entry.type]}${amount}`;
+  });
+}
+
+/* --------------------------------------------------------------------- ui */
 
 interface DeckProps {
   label: string;
-  /** Cards shown with the gold ring. */
   selected: string[];
-  /** Selected cards that can no longer be changed. */
   locked?: string[];
-  /** Cards shown faded and unclickable, e.g. the hero's own cards. */
   taken?: string[];
-  /** Whether unselected cards can still be picked. */
   open: boolean;
   onPick: (card: Card) => void;
 }
@@ -315,7 +224,7 @@ function DeckGrid({ label, selected, locked = [], taken = [], open, onPick }: De
                 key={key}
                 className={`advisor-deck-card suit-${suit} ${isSelected ? "selected" : ""} ${isTaken ? "in-hand" : ""}`}
                 aria-selected={isSelected}
-                aria-label={`${rankLabel(rank)} of ${SUIT_NAME[suit]}${isTaken ? ", in your hand" : ""}`}
+                aria-label={`${rankLabel(rank)} of ${SUIT_NAME[suit]}${isTaken ? ", already used" : ""}`}
                 disabled={isTaken || locked.includes(key) || (!isSelected && !open)}
                 onClick={() => onPick(card)}
               >
@@ -341,22 +250,104 @@ function BigCard({ card, size }: { card: Card; size?: "sm" }) {
 }
 
 export function PreflopAdvisor() {
+  const [seat, setSeat] = useState<Seat>("btn");
   const [hole, setHole] = useState<Card[]>([]);
   const [handText, setHandText] = useState("");
-  const [seat, setSeat] = useState<Seat>("sb");
-  const [hand, setHand] = useState<Hand | null>(null);
   const [boardText, setBoardText] = useState("");
+  // Created after mount: dealing uses random numbers, which must not run during prerender.
+  const [game, setGame] = useState<GameState | null>(null);
   const [chosen, setChosen] = useState<number | null>(null);
+  const [raiseText, setRaiseText] = useState("");
   const [played, setPlayed] = useState(0);
   const [model, setModel] = useState<Model | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const street: Street = hand?.street ?? "preflop";
+  useEffect(() => {
+    const timer = setTimeout(() => setGame(newHand("btn")), 0);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/model")
+      .then(async (response) => {
+        if (!response.ok) throw new Error((await response.json() as { error?: string }).error ?? "Unable to load model.");
+        return response.json() as Promise<ModelJson>;
+      })
+      .then((raw) => setModel({ ...raw, layers: raw.layers.map((layer) => ({ ...layer, w: Float32Array.from(layer.w), b: Float32Array.from(layer.b) })) }))
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Unable to load model."));
+  }, []);
+
+  const live = useMemo(() => (game ? withHole(game, hole) : null), [game, hole]);
+  if (!live || !game) return <main className="advisor-page"><p className="muted">Dealing…</p></main>;
+  return <Advisor {...{ live, game, setGame, hole, setHole, handText, setHandText, boardText, setBoardText, chosen, setChosen, raiseText, setRaiseText, played, setPlayed, model, error, seat, setSeat }} />;
+}
+
+type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
+interface AdvisorProps {
+  live: GameState;
+  game: GameState;
+  setGame: Setter<GameState | null>;
+  hole: Card[];
+  setHole: Setter<Card[]>;
+  handText: string;
+  setHandText: Setter<string>;
+  boardText: string;
+  setBoardText: Setter<string>;
+  chosen: number | null;
+  setChosen: Setter<number | null>;
+  raiseText: string;
+  setRaiseText: Setter<string>;
+  played: number;
+  setPlayed: Setter<number>;
+  model: Model | null;
+  error: string | null;
+  seat: Seat;
+  setSeat: Setter<Seat>;
+}
+
+function Advisor({ live, game, setGame, hole, setHole, handText, setHandText, boardText, setBoardText, chosen, setChosen, raiseText, setRaiseText, played, setPlayed, model, error, seat, setSeat }: AdvisorProps) {
+  const hero = live.players[HERO];
+  const street = live.street;
   const preflop = street === "preflop";
-  const boardNeeded = STREET_CARDS[street];
-  const board = hand?.board ?? [];
-  const boardReady = board.length >= boardNeeded;
+  const started = live.history.length > 0;
+  const boardNeeded = BOARD_NEEDED[street];
+  const boardReady = live.board.length >= boardNeeded;
+  const heroTurn = live.phase === "betting" && live.toAct === HERO;
+  const villainTurn = live.phase === "betting" && live.toAct !== null && live.toAct !== HERO;
+  const over = live.phase === "handOver" || live.phase === "gameOver" || live.phase === "runout" || (live.phase === "streetEnd" && street === "river");
+  const villainLegal = villainTurn ? legalActions(live) : null;
   const holeKeys = new Set(hole.map(cardKey));
+
+  const advice = useMemo(
+    () => (model && heroTurn && boardReady && hole.length === 2 ? advise(model, live) : null),
+    [boardReady, heroTurn, hole.length, live, model],
+  );
+
+  // Every starting hand's top move in this exact spot, for the range chart.
+  const matrix = useMemo(() => {
+    if (!model || !preflop || !heroTurn) return null;
+    return MATRIX_RANKS.map((_, row) =>
+      MATRIX_RANKS.map((_, column) => {
+        const cards = matrixHand(row, column);
+        const result = advise(model, withHole(game, cards));
+        return {
+          cards,
+          label: handLabel(cards[0], cards[1]),
+          kind: moveKind(result.actions[result.best], result),
+          move: describeMove(result.actions[result.best], result),
+          confidence: result.probabilities[result.best],
+        };
+      }),
+    );
+  }, [game, heroTurn, model, preflop]);
+
+  const resetHand = (nextSeat: Seat) => {
+    setSeat(nextSeat);
+    setGame(newHand(nextSeat));
+    setBoardText("");
+    setChosen(null);
+    setRaiseText("");
+  };
 
   const typeHand = (value: string) => {
     setHandText(value);
@@ -370,8 +361,8 @@ export function PreflopAdvisor() {
     setHandText(handLabel(cards[0], cards[1]));
   };
 
-  // Two clicks on the deck set both cards. A selected card un-selects; once
-  // two are picked, the next click replaces the older one.
+  // Two taps set both cards; a tap on a chosen card removes it, and once two
+  // are chosen the next tap replaces the older one.
   const pickHoleCard = (card: Card) => {
     const key = cardKey(card);
     const cards = holeKeys.has(key) ? hole.filter((c) => cardKey(c) !== key) : hole.length < 2 ? [...hole, card] : [hole[1], card];
@@ -379,97 +370,77 @@ export function PreflopAdvisor() {
     setHandText(cards.map(cardKey).join(" "));
   };
 
-  const updateBoard = (update: (cards: Card[]) => Card[]) => {
-    setHand((current) => {
-      if (!current) return current;
-      const cards = update(current.board);
-      setBoardText(cards.map(cardKey).join(" "));
-      return cards === current.board ? current : { ...current, board: cards };
-    });
+  const setBoard = (cards: Card[]) => {
+    setGame((current) => (current ? { ...current, board: cards } : current));
+    setBoardText(cards.map(cardKey).join(" "));
     setChosen(null);
+  };
+
+  const lockedBoard = street === "flop" ? 0 : street === "turn" ? 3 : street === "river" ? 4 : 0;
+
+  const toggleBoardCard = (card: Card) => {
+    const key = cardKey(card);
+    const index = live.board.findIndex((c) => cardKey(c) === key);
+    if (index >= 0) {
+      if (index < lockedBoard) return;
+      setBoard(live.board.filter((_, i) => i !== index));
+    } else if (live.board.length < boardNeeded) {
+      setBoard([...live.board, card]);
+    }
   };
 
   const typeBoard = (value: string) => {
     setBoardText(value);
     const cards = parseBoard(value);
     if (!cards || cards.length > boardNeeded || cards.some((card) => holeKeys.has(cardKey(card)))) return;
-    // Keep earlier streets fixed: only the cards of the current street can change.
-    const locked = board.slice(0, lockedCards(street));
+    const locked = live.board.slice(0, lockedBoard);
     if (!locked.every((card, index) => cards[index] && cardKey(cards[index]) === cardKey(card))) return;
-    setHand((current) => (current ? { ...current, board: cards } : current));
+    setGame((current) => (current ? { ...current, board: cards } : current));
     setChosen(null);
   };
 
-  const toggleBoardCard = (card: Card) => {
-    const key = cardKey(card);
-    updateBoard((cards) => {
-      const index = cards.findIndex((c) => cardKey(c) === key);
-      if (index >= 0) return index < lockedCards(street) ? cards : cards.filter((_, i) => i !== index);
-      return cards.length >= boardNeeded ? cards : [...cards, card];
-    });
-  };
-
-  const startOver = () => {
-    setHand(null);
-    setBoardText("");
+  const act = (action: Parameters<typeof applyAction>[1]) => {
+    setGame((current) => (current ? settle(applyAction(current, action)) : current));
     setChosen(null);
+    setRaiseText("");
   };
 
-  // Next hand: the button moves one seat and the cards are cleared for the next deal.
+  const pick = advice ? (chosen !== null && advice.mask[chosen] ? chosen : advice.best) : null;
+
+  const playChosen = () => {
+    if (!advice || pick === null) return;
+    const move = advice.actions[pick];
+    act(move.type === "raise" ? { type: "raise", amount: move.amount } : { type: move.type });
+  };
+
+  const villainRaise = () => {
+    if (!villainLegal?.canRaise) return;
+    const chips = Math.round(parseFloat(raiseText) * BB);
+    act({ type: "raise", amount: Number.isFinite(chips) ? chips : villainLegal.minRaiseTo });
+  };
+
   const nextHand = () => {
     setHole([]);
     setHandText("");
-    setSeat((current) => SEATS[(SEATS.findIndex((option) => option.id === current) + 1) % SEATS.length].id);
     setPlayed((count) => count + 1);
-    startOver();
+    resetHand(NEXT_SEAT[seat]);
   };
-
-  useEffect(() => {
-    fetch("/api/model")
-      .then(async (response) => {
-        if (!response.ok) throw new Error((await response.json() as { error?: string }).error ?? "Unable to load model.");
-        return response.json() as Promise<ModelJson>;
-      })
-      .then((raw) => setModel({ ...raw, layers: raw.layers.map((layer) => ({ ...layer, w: Float32Array.from(layer.w), b: Float32Array.from(layer.b) })) }))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Unable to load model."));
-  }, []);
-
-  const advice = useMemo(
-    () => (model && street !== "over" && boardReady && hole.length === 2 ? advise(model, [hole[0], hole[1]], seat, hand) : null),
-    [boardReady, hand, hole, model, seat, street],
-  );
-
-  // Every starting hand's top move, for the range chart. 169 tiny forward passes.
-  const matrix = useMemo(() => {
-    if (!model) return null;
-    return MATRIX_RANKS.map((_, row) =>
-      MATRIX_RANKS.map((_, column) => {
-        const cards = matrixHand(row, column);
-        const result = advise(model, cards, seat, null);
-        return {
-          cards,
-          label: handLabel(cards[0], cards[1]),
-          kind: moveKind(result.actions[result.best], result.observation),
-          move: describeMove(result.actions[result.best], result.observation),
-          confidence: result.probabilities[result.best],
-        };
-      }),
-    );
-  }, [model, seat]);
 
   const selectedLabel = hole.length === 2 ? handLabel(hole[0], hole[1]) : hole.length === 1 ? "One more card" : "Pick two cards";
   const typedInvalid = handText.trim() !== "" && !parseHand(handText) && handText !== hole.map(cardKey).join(" ");
   const boardInvalid = boardText.trim() !== "" && !parseBoard(boardText);
-  const pick = advice ? (chosen !== null && advice.mask[chosen] ? chosen : advice.best) : null;
-  const seatInfo = SEATS.find((option) => option.id === seat)!;
   const streetPrompt = street === "flop" ? "Set the flop" : street === "turn" ? "Set the turn card" : street === "river" ? "Set the river card" : "";
-
-  const playChosen = () => {
-    if (!advice || pick === null) return;
-    setHand(playMove(seat, hand, advice.observation, advice.actions[pick]));
-    setChosen(null);
-    setBoardText(board.map(cardKey).join(" "));
-  };
+  const pot = potTotal(live);
+  const outcome = (() => {
+    if (live.phase === "runout") return `All-in for ${bbText(pot)}. No more decisions: run out the board and see who wins.`;
+    if (live.phase === "streetEnd" && street === "river") return `Showdown for ${bbText(pot)}.`;
+    if (live.result) return hero.folded ? "You folded. The hand is over." : `Everyone folded. You win ${bbText(live.result.won[HERO] ?? pot)}.`;
+    return "";
+  })();
+  const history = historyLines(live);
+  const villainName = villainTurn ? seatName(live, live.toAct!) : "";
+  const showHoleDeck = preflop && !over;
+  const needsCards = hole.length < 2;
 
   return (
     <main className="advisor-page">
@@ -477,103 +448,104 @@ export function PreflopAdvisor() {
         <Link href="/" className="ghost-btn">← Table</Link>
         <div className="advisor-title">
           <div className="brand-name">Hand Advisor</div>
-          <div className="muted">What the trained Expresso bot would do, street by street</div>
+          <div className="muted">Play a real 3-handed hand. Report what the others do; the Expresso bot advises your every move.</div>
         </div>
       </header>
 
       <div className="advisor-layout">
-        {preflop ? (
-          <section className={`advisor-chart ${hole.length < 2 ? "advisor-first" : ""}`} aria-label="Range chart">
+        <section className={`advisor-chart ${needsCards && preflop && !over ? "advisor-first" : ""} ${!preflop ? "advisor-board" : ""}`} aria-label="Table">
+          <div className="advisor-board-head">
             <div className="advisor-seat" role="group" aria-label="Your seat">
               {SEATS.map((option) => (
-                <button type="button" key={option.id} className={seat === option.id ? "on" : ""} aria-pressed={seat === option.id} onClick={() => setSeat(option.id)}>
+                <button type="button" key={option.id} className={seat === option.id ? "on" : ""} aria-pressed={seat === option.id} disabled={started} onClick={() => resetHand(option.id)}>
                   <strong>{option.name}</strong>
                   <span>{option.spot}</span>
                 </button>
               ))}
             </div>
+            {started && !over && <button type="button" className="ghost-btn" onClick={() => resetHand(seat)}>Start over</button>}
+          </div>
 
-            <div className="advisor-deck-title">
-              <span>Your cards</span>
-              <span className="muted">Tap your two cards, or a hand in the chart below</span>
-            </div>
-            <DeckGrid label="Pick your two cards" selected={[...holeKeys]} open onPick={pickHoleCard} />
-
-            <div className="advisor-deck-title">
-              <span>Range chart</span>
-              <span className="muted">Suited above the diagonal, offsuit below</span>
-            </div>
-            <div className="advisor-matrix" role="grid" aria-label="Starting hands. Suited hands above the diagonal, offsuit below, pairs on it.">
-              {(matrix ?? MATRIX_RANKS.map((_, row) => MATRIX_RANKS.map((_, column) => {
-                const cards = matrixHand(row, column);
-                return { cards, label: handLabel(cards[0], cards[1]), kind: "fold" as MoveKind, move: "", confidence: 0 };
-              }))).map((cells, row) => (
-                <div role="row" key={row} className="advisor-matrix-row">
-                  {cells.map((cell) => {
-                    const selected = cell.label === selectedLabel;
-                    return (
-                      <button
-                        type="button"
-                        role="gridcell"
-                        key={cell.label}
-                        className={`advisor-cell kind-${cell.kind} ${selected ? "selected" : ""} ${matrix ? "" : "pending"}`}
-                        style={{ "--confidence": cell.confidence } as React.CSSProperties}
-                        aria-selected={selected}
-                        aria-label={matrix ? `${cell.label}: ${cell.move}, ${Math.round(cell.confidence * 100)}%` : cell.label}
-                        title={matrix ? `${cell.label} · ${cell.move} · ${Math.round(cell.confidence * 100)}%` : cell.label}
-                        onClick={() => pickHand(cell.cards)}
-                      >
-                        {cell.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-
-            <div className="advisor-legend" aria-label="Colour key">
-              {(["fold", "call", "raise", "allin"] as const).map((kind) => (
-                <span key={kind}><i className={`advisor-swatch kind-${kind}`} aria-hidden="true" />{{ fold: "Fold", call: "Call", raise: "Raise", allin: "All-in" }[kind]}</span>
-              ))}
-              <span className="muted">Brighter means more confident</span>
-            </div>
-          </section>
-        ) : (
-          <section className="advisor-chart advisor-board" aria-label="Board">
-            <div className="advisor-board-head">
-              <div>
-                <div className="advisor-board-title">{street === "over" ? "Hand over" : streetPrompt}</div>
-                <div className="muted">
-                  {street === "over" ? hand?.outcome : boardReady ? "Board set. Tap a card to swap it, or play your move." : `Pick ${boardNeeded - board.length} more card${boardNeeded - board.length === 1 ? "" : "s"}, or type them below.`}
-                </div>
+          {showHoleDeck && (
+            <>
+              <div className="advisor-deck-title">
+                <span>Your cards</span>
+                <span className="muted">Tap your two cards{heroTurn ? ", or a hand in the chart below" : ""}</span>
               </div>
-              <button type="button" className="ghost-btn" onClick={startOver}>Start over</button>
-            </div>
+              <DeckGrid label="Pick your two cards" selected={[...holeKeys]} open onPick={pickHoleCard} />
+            </>
+          )}
 
-            <div className="advisor-board-cards" aria-label="Board cards">
-              {Array.from({ length: 5 }, (_, index) => board[index]
-                ? <BigCard key={cardKey(board[index])} card={board[index]} size="sm" />
-                : <span key={index} className={`advisor-card-slot ${index < boardNeeded ? "wanted" : ""}`} aria-hidden="true">{index < 3 ? "Flop" : index === 3 ? "Turn" : "River"}</span>)}
-            </div>
+          {!preflop && (
+            <>
+              <div className="advisor-deck-title">
+                <span>{over ? "Board" : streetPrompt}</span>
+                <span className="muted">
+                  {over ? "" : boardReady ? "Board set. Tap a card to swap it." : `Pick ${boardNeeded - live.board.length} more card${boardNeeded - live.board.length === 1 ? "" : "s"}, or type them.`}
+                </span>
+              </div>
+              <div className="advisor-board-cards" aria-label="Board cards">
+                {Array.from({ length: 5 }, (_, index) => live.board[index]
+                  ? <BigCard key={cardKey(live.board[index])} card={live.board[index]} size="sm" />
+                  : <span key={index} className={`advisor-card-slot ${index < boardNeeded ? "wanted" : ""}`} aria-hidden="true">{index < 3 ? "Flop" : index === 3 ? "Turn" : "River"}</span>)}
+              </div>
+              {!over && (
+                <label className="advisor-hand-input advisor-board-input">
+                  <span>Type the board</span>
+                  <input value={boardText} onChange={(event) => typeBoard(event.target.value)} placeholder="As Kd 7h" spellCheck={false} autoComplete="off" aria-invalid={boardInvalid} />
+                  <small className={boardInvalid ? "advisor-error" : ""}>{boardInvalid ? "Use cards like As Kd 7h, with no repeats." : "Cards like As Kd 7h, in the order they came."}</small>
+                </label>
+              )}
+              <DeckGrid
+                label="Pick board cards"
+                selected={live.board.map(cardKey)}
+                locked={live.board.slice(0, lockedBoard).map(cardKey)}
+                taken={[...holeKeys]}
+                open={!over && live.board.length < boardNeeded}
+                onPick={toggleBoardCard}
+              />
+            </>
+          )}
 
-            {street !== "over" && (
-              <label className="advisor-hand-input advisor-board-input">
-                <span>Type the board</span>
-                <input value={boardText} onChange={(event) => typeBoard(event.target.value)} placeholder="As Kd 7h" spellCheck={false} autoComplete="off" aria-invalid={boardInvalid} />
-                <small className={boardInvalid ? "advisor-error" : ""}>{boardInvalid ? "Use cards like As Kd 7h, with no repeats." : "Cards like As Kd 7h, in the order they came."}</small>
-              </label>
-            )}
-
-            <DeckGrid
-              label="Pick board cards"
-              selected={board.map(cardKey)}
-              locked={board.slice(0, lockedCards(street)).map(cardKey)}
-              taken={[...holeKeys]}
-              open={street !== "over" && board.length < boardNeeded}
-              onPick={toggleBoardCard}
-            />
-          </section>
-        )}
+          {matrix && (
+            <>
+              <div className="advisor-deck-title">
+                <span>Range chart for this spot</span>
+                <span className="muted">Suited above the diagonal, offsuit below</span>
+              </div>
+              <div className="advisor-matrix" role="grid" aria-label="Starting hands. Suited hands above the diagonal, offsuit below, pairs on it.">
+                {matrix.map((cells, row) => (
+                  <div role="row" key={row} className="advisor-matrix-row">
+                    {cells.map((cell) => {
+                      const selected = cell.label === selectedLabel;
+                      return (
+                        <button
+                          type="button"
+                          role="gridcell"
+                          key={cell.label}
+                          className={`advisor-cell kind-${cell.kind} ${selected ? "selected" : ""}`}
+                          style={{ "--confidence": cell.confidence } as React.CSSProperties}
+                          aria-selected={selected}
+                          aria-label={`${cell.label}: ${cell.move}, ${Math.round(cell.confidence * 100)}%`}
+                          title={`${cell.label} · ${cell.move} · ${Math.round(cell.confidence * 100)}%`}
+                          onClick={() => pickHand(cell.cards)}
+                        >
+                          {cell.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+              <div className="advisor-legend" aria-label="Colour key">
+                {(["fold", "call", "raise", "allin"] as const).map((kind) => (
+                  <span key={kind}><i className={`advisor-swatch kind-${kind}`} aria-hidden="true" />{{ fold: "Fold", call: "Call", raise: "Raise", allin: "All-in" }[kind]}</span>
+                ))}
+                <span className="muted">Brighter means more confident</span>
+              </div>
+            </>
+          )}
+        </section>
 
         <section className="advisor-verdict" aria-live="polite">
           <div className="advisor-hand">
@@ -584,7 +556,7 @@ export function PreflopAdvisor() {
             </div>
             <div className="advisor-hand-name">
               <span className="muted">
-                {preflop ? seatInfo.summary : `${STREET_NAME[street]} · ${seatInfo.name} · pot ${bbText(hand!.pot)} · ${bbText(hand!.heroStack)} behind`}
+                {over ? "Hand over" : STREET_NAME[street]} · {seatName(live, HERO)} · pot {bbText(pot)} · {bbText(hero.stack)} behind
               </span>
               <strong>{selectedLabel}</strong>
             </div>
@@ -592,20 +564,53 @@ export function PreflopAdvisor() {
 
           {error ? (
             <p className="advisor-error">{error}</p>
-          ) : hole.length < 2 ? (
-            <div className="advisor-best">
-              <span className="muted">Best move</span>
-              <strong className="pending">Pick your cards first</strong>
-            </div>
-          ) : street === "over" ? (
+          ) : over ? (
             <div className="advisor-best">
               <span className="muted">Result</span>
-              <strong className="advisor-outcome">{hand?.outcome}</strong>
+              <strong className="advisor-outcome">{outcome}</strong>
             </div>
           ) : !boardReady ? (
             <div className="advisor-best">
-              <span className="muted">Best move</span>
+              <span className="muted">{villainTurn ? `${villainName} to act` : "Best move"}</span>
               <strong className="pending">{streetPrompt} first</strong>
+            </div>
+          ) : villainTurn && villainLegal ? (
+            <div className="advisor-ask">
+              <span className="muted">{villainName} to act</span>
+              <strong>What did they do?</strong>
+              <div className="advisor-ask-buttons">
+                {villainLegal.canFold && <button type="button" onClick={() => act({ type: "fold" })}>Fold</button>}
+                {villainLegal.canCheck && <button type="button" onClick={() => act({ type: "check" })}>Check</button>}
+                {villainLegal.canCall && <button type="button" onClick={() => act({ type: "call" })}>Call {bbText(villainLegal.callAmount)}</button>}
+                {villainLegal.canRaise && (
+                  <>
+                    <span className="advisor-ask-raise">
+                      <span>{live.currentBet === 0 ? "Bet" : "Raise to"}</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min={villainLegal.minRaiseTo / BB}
+                        max={villainLegal.maxRaiseTo / BB}
+                        step={0.5}
+                        placeholder={String(villainLegal.minRaiseTo / BB)}
+                        value={raiseText}
+                        onChange={(event) => setRaiseText(event.target.value)}
+                        onKeyDown={(event) => { if (event.key === "Enter") villainRaise(); }}
+                        aria-label={`${live.currentBet === 0 ? "Bet" : "Raise to"} amount in big blinds, ${villainLegal.minRaiseTo / BB} to ${villainLegal.maxRaiseTo / BB}`}
+                      />
+                      <span>BB</span>
+                      <button type="button" onClick={villainRaise}>{live.currentBet === 0 ? "Bet" : "Raise"}</button>
+                    </span>
+                    <button type="button" className="allin" onClick={() => act({ type: "raise", amount: villainLegal.maxRaiseTo })}>All-in {bbText(villainLegal.maxRaiseTo)}</button>
+                  </>
+                )}
+              </div>
+              <small className="muted">{villainLegal.canRaise ? `Minimum ${live.currentBet === 0 ? "bet" : "raise"} ${bbText(villainLegal.minRaiseTo)}.` : "They can only call or fold."}</small>
+            </div>
+          ) : needsCards ? (
+            <div className="advisor-best">
+              <span className="muted">Best move</span>
+              <strong className="pending">Pick your cards first</strong>
             </div>
           ) : !advice ? (
             <div className="advisor-best">
@@ -614,13 +619,13 @@ export function PreflopAdvisor() {
             </div>
           ) : (
             <>
-              <div className={`advisor-best kind-${moveKind(advice.actions[advice.best], advice.observation)}`}>
+              <div className={`advisor-best kind-${moveKind(advice.actions[advice.best], advice)}`}>
                 <span className="muted">Best move</span>
-                <strong>{describeMove(advice.actions[advice.best], advice.observation)}</strong>
+                <strong>{describeMove(advice.actions[advice.best], advice)}</strong>
                 <span className="advisor-stats">
                   <b>{(advice.probabilities[advice.best] * 100).toFixed(0)}%</b> confidence
                   <i aria-hidden="true">·</i>
-                  <b>{(advice.equity * 100).toFixed(0)}%</b> equity {seat === "btn" && preflop ? "3-way" : "heads-up"}
+                  <b>{(advice.equity * 100).toFixed(0)}%</b> equity vs {live.players.filter((p) => p.id !== HERO && !p.folded).length === 2 ? "2 players" : "1 player"}
                 </span>
               </div>
               <ol className="advisor-probabilities" aria-label="All legal moves. Pick the one you played.">
@@ -633,8 +638,8 @@ export function PreflopAdvisor() {
                       onClick={() => setChosen(index)}
                     >
                       <span>
-                        {describeMove(advice.actions[index], advice.observation)}
-                        <small>{sizeHint(index, advice.actions[index], advice.observation)}</small>
+                        {describeMove(advice.actions[index], advice)}
+                        <small>{sizeHint(index, advice.actions[index], advice)}</small>
                       </span>
                       <b>{(advice.probabilities[index] * 100).toFixed(0)}%</b>
                       <i style={{ width: `${advice.probabilities[index] * 100}%` }} />
@@ -645,43 +650,35 @@ export function PreflopAdvisor() {
             </>
           )}
 
-          {street === "over" ? (
+          {over ? (
             <div className="advisor-next">
               <button type="button" className="primary-btn" onClick={nextHand}>Next hand</button>
               <span className="muted">
-                Clears the cards and moves the button.
+                Clears the cards and moves the button: you will be the {SEATS.find((option) => option.id === NEXT_SEAT[seat])?.name.toLowerCase()}.
                 {played > 0 && <small>{played} {played === 1 ? "hand" : "hands"} played</small>}
               </span>
             </div>
-          ) : (
+          ) : heroTurn ? (
             <div className="advisor-next">
               <button type="button" className="primary-btn" disabled={pick === null} onClick={playChosen}>
-                I played{advice && pick !== null ? `: ${describeMove(advice.actions[pick], advice.observation)}` : ""}
+                I played{advice && pick !== null ? `: ${describeMove(advice.actions[pick], advice)}` : ""}
               </button>
               <span className="muted">
                 {pick !== null && advice && pick !== advice.best ? "Your pick, not the model's." : "Tap another move above if you played differently."}
-                <small>{street === "river" ? "Then showdown." : `Then the ${street === "preflop" ? "flop" : street === "flop" ? "turn" : "river"}. The opponent is assumed to call or check.`}</small>
               </span>
             </div>
-          )}
+          ) : null}
 
-          {hand && hand.history.length > 0 && (
+          {history.length > 0 && (
             <ol className="advisor-history" aria-label="This hand so far">
-              {hand.history.map((line) => <li key={line}>{line}</li>)}
+              {history.map((line, index) => <li key={index}>{line}</li>)}
             </ol>
           )}
 
-          {preflop && (
+          {preflop && !over && (
             <label className="advisor-hand-input">
               <span>Or type a hand</span>
-              <input
-                value={handText}
-                onChange={(event) => typeHand(event.target.value)}
-                placeholder="AKs"
-                spellCheck={false}
-                autoComplete="off"
-                aria-invalid={typedInvalid}
-              />
+              <input value={handText} onChange={(event) => typeHand(event.target.value)} placeholder="AKs" spellCheck={false} autoComplete="off" aria-invalid={typedInvalid} />
               <small className={typedInvalid ? "advisor-error" : ""}>
                 {typedInvalid ? "Use a hand like AKs, AKo, TT, or exact cards like As Kd." : "AKs, AKo, TT, or exact cards like As Kd."}
               </small>
@@ -690,7 +687,7 @@ export function PreflopAdvisor() {
 
           {model && (
             <p className="muted advisor-model">
-              10/20 blinds, 25 BB stacks. Model {model.checkpoint}, {model.games.toLocaleString("en-GB")} training games.
+              10/20 blinds, 25 BB stacks, 3 players. Model {model.checkpoint}, {model.games.toLocaleString("en-GB")} training games.
             </p>
           )}
         </section>
