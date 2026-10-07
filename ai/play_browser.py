@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import time
 from pathlib import Path
 
@@ -65,7 +66,12 @@ def main() -> None:
     ap.add_argument("--url", default="http://localhost:3000")
     ap.add_argument("--speed", type=int, default=30)
     ap.add_argument("--games", type=int, default=100)
-    ap.add_argument("--bots", choices=["easy", "hard", "mixed"], default="mixed", help="opponent level chosen in the lobby")
+    ap.add_argument(
+        "--bots",
+        choices=["random", "easy", "hard", "mixed"],
+        default="random",
+        help="opponents: random (like training: 2 easy 25%%, 2 hard 25%%, one of each 50%%), easy, hard, or mixed (one of each)",
+    )
     ap.add_argument("--buy-in", type=float, default=1, help="stake per game in € (0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500)")
     ap.add_argument("--checkpoint", type=Path, default=CHECKPOINTS / "best.pt")
     ap.add_argument("--headed", action="store_true", help="show the browser window")
@@ -85,9 +91,19 @@ def main() -> None:
         page = browser.new_page(viewport={"width": 1280, "height": 800})
         page.add_init_script(f"localStorage.setItem('expresso-trainer:v1', JSON.stringify({json.dumps(PROFILE)}))")
         page.goto(f"{args.url}/?speed={args.speed}")
-        page.click(f'.buyin[data-buyin="{args.buy_in:g}"]')
-        page.click(f'[data-opponents="{args.bots}"]')
-        page.get_by_role("button", name="Play Expresso ·").click()
+        def start_game() -> str:
+            """Pick the opponents in the lobby (re-drawn each game in random mode) and register."""
+            if args.bots == "random":
+                bots = "mixed" if random.random() < 0.5 else random.choice(["easy", "hard"])
+            else:
+                bots = args.bots
+            page.click(f'.buyin[data-buyin="{args.buy_in:g}"]')
+            page.click(f'[data-opponents="{bots}"]')
+            page.get_by_role("button", name="Play Expresso ·").click()
+            return bots
+
+        table = start_game()
+        tables: list[str] = []
 
         last_decision = None
         while len(places) < args.games:
@@ -101,11 +117,16 @@ def main() -> None:
                 won_total += prize
                 wins = places.count(1)
                 print(
-                    f"game {len(places):4d}: {ORDINAL[place]}  x{mult:<6,}  bet {money(buy_in)}  won {money(prize):>9}   "
+                    f"game {len(places):4d}: {ORDINAL[place]}  vs {table:5}  x{mult:<6,}  bet {money(buy_in)}  won {money(prize):>9}   "
                     f"win rate {wins / len(places) * 100:5.1f}%   net {money(won_total - bet_total, sign=True)}",
                     flush=True,
                 )
-                page.get_by_role("button", name="Play again").click()
+                tables.append(table)
+                if args.bots == "random":
+                    page.get_by_role("button", name="Lobby").click()
+                    table = start_game()
+                else:
+                    page.get_by_role("button", name="Play again").click()
                 continue
 
             skip = page.query_selector(".wheel-skip")
@@ -148,6 +169,12 @@ def main() -> None:
     print(f"\n{len(p)} browser games in {(time.time() - t0) / 60:.1f} min, {decisions} decisions")
     print(f"win {win * 100:.1f}% ± {ci * 100:.1f}   places 1/2/3 = {np.bincount(p, minlength=4)[1:].tolist()}")
     print(f"multipliers drawn: " + ", ".join(f"x{m:,}×{multipliers.count(m)}" for m in sorted(set(multipliers))))
+    for kind in ["easy", "mixed", "hard"]:
+        idx = [i for i, t in enumerate(tables) if t == kind]
+        if idx:
+            w = sum(places[i] == 1 for i in idx)
+            label = {"easy": "2 easy bots", "mixed": "easy + hard", "hard": "2 hard bots"}[kind]
+            print(f"  vs {label:12}: {w}/{len(idx)} won ({w / len(idx) * 100:.0f}%)")
     print(f"amount bet: {money(bet_total)}")
     print(f"amount won: {money(won_total)}")
     print(f"net result: {money(net, sign=True)}   (ROI {net / bet_total * 100:+.1f}%)")

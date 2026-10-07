@@ -120,9 +120,12 @@ ai/.venv/bin/python ai/play_browser.py --games 20 --speed 10 --headed   # watch 
 
 ```bash
 ai/.venv/bin/python ai/play_browser.py --games 20 --buy-in 5            # stake per game in € (default 1)
-ai/.venv/bin/python ai/play_browser.py --games 20 --bots hard           # lobby opponents: easy | hard | mixed (default)
+ai/.venv/bin/python ai/play_browser.py --games 20 --bots hard           # opponents: random (default) | easy | hard | mixed
 ai/.venv/bin/python ai/play_browser.py --games 50 --checkpoint ai/checkpoints/latest.pt
 ```
+
+`--bots random` (default) re-draws the opponents before every game, like training: 2 easy bots (25%), 2 hard bots (25%) or one of each (50%).
+The summary then shows the win rate per table type.
 
 `?speed=N` on the game URL fast-forwards bot thinking, pauses and the blind clock.
 The agent uses `best.pt` by default and always plays its most likely action.
