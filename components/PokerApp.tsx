@@ -16,13 +16,10 @@ import {
   type MultiplierTier,
 } from "@/lib/poker/expresso";
 import { randomInt, shuffle } from "@/lib/poker/cards";
+import { randomNames } from "@/lib/poker/names";
 import { MultiplierWheel } from "./MultiplierWheel";
 import { PokerTable } from "./PokerTable";
 
-const BOT_NAMES = [
-  "NitroNico", "LaRiviere", "Fishbowl", "ShoveMcGee", "AceVentura", "BlindThief", "TiltLord",
-  "Coolerz", "SpinQueen", "RiverRat", "Donkzilla", "PotOdds", "Snapcall", "SuitedJack",
-];
 
 const STORAGE_KEY = "expresso-trainer:v1";
 
@@ -104,7 +101,8 @@ export function PokerApp() {
     if (stats.bankroll < amount) return;
     updateStats((s) => ({ ...s, bankroll: +(s.bankroll - amount).toFixed(2), played: s.played + 1, profit: +(s.profit - amount).toFixed(2) }));
     const tier = drawMultiplier(amount);
-    const names = [stats.heroName || "You", ...shuffle(BOT_NAMES).slice(0, 2)];
+    const hero = stats.heroName || "You";
+    const names = [hero, ...randomNames(2, [hero])];
     const levels: BotLevel[] = opponents === "mixed" ? shuffle<BotLevel>(["easy", "hard"]) : [opponents, opponents];
     const botLevels = [null, ...levels];
     setScreen({ kind: "wheel", format, buyIn: amount, tier, reel: buildReel(amount, tier.multiplier), names, botLevels });

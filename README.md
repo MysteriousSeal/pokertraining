@@ -14,6 +14,7 @@ A 3-handed hyper-turbo sit & go modelled on Winamax Expresso: you play against t
 - **Table:** a 15 s shot clock (auto check/fold), Check/Fold and Call any pre-actions, preset bet sizes and a slider, BB display, a four-colour deck and a hand history.
 - **Keyboard:** `F` fold · `C` check/call · `R` raise · `A` all-in.
 - **Bankroll:** play money (€1,000 to start), saved in `localStorage`.
+- **Opponent names:** generated like real online usernames from a prefix, a core word, an optional ending and one of three styles (`LuckyShark75`, `lucky_shark_75`, `luckyshark75`). That gives 2,879,154 distinct names that fit on a seat (`npx tsx scripts/count-names.ts`).
 
 ## Run
 
@@ -196,6 +197,7 @@ npx tsx ai/baseline.ts 2000   # win rate of random, call-only, always all-in, an
 | `lib/poker/botHard.ts` | Hard bot: push/fold charts, range reading, postflop play |
 | `lib/poker/ranges.ts` | Hand classes, combos, "top X%" ranges, equity against ranges |
 | `lib/poker/data/` | Preflop equity table and solved push/fold charts |
+| `lib/poker/names.ts` | Opponent name generator |
 | `lib/poker/expresso.ts` | Formats, blind levels, buy-ins, official multiplier tables and payouts |
 | `hooks/useExpressoGame.ts` | Game loop: bot timing, street pacing, blind clock, shot clock |
 | `components/` | Lobby, multiplier reel, table, seats, action bar |
