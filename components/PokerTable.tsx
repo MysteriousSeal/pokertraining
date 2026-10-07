@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { GameState } from "@/lib/poker/engine";
 import { collectedPot, potTotal } from "@/lib/poker/engine";
 import { blindsAt, formatMoney, multiplierClass, type Format, type MultiplierTier } from "@/lib/poker/expresso";
-import { HERO_TIME_MS, useExpressoGame } from "@/hooks/useExpressoGame";
+import { useExpressoGame } from "@/hooks/useExpressoGame";
 import { PlayingCard } from "./PlayingCard";
 import { Seat } from "./Seat";
 import { ActionBar, type PreAction } from "./ActionBar";
@@ -17,12 +17,13 @@ interface Props {
   tier: MultiplierTier;
   onGameOver: (final: GameState) => void;
   onQuit: () => void;
+  speed?: number;
 }
 
 const POSITIONS = ["bottom", "left", "right"] as const;
 
-export function PokerTable({ names, format, buyIn, tier, onGameOver, onQuit }: Props) {
-  const { state, clock, heroId, heroToAct, act } = useExpressoGame(names, format, onGameOver);
+export function PokerTable({ names, format, buyIn, tier, onGameOver, onQuit, speed = 1 }: Props) {
+  const { state, clock, heroId, heroToAct, heroTimeMs, act } = useExpressoGame(names, format, onGameOver, speed);
   const [inBB, setInBB] = useState(false);
   const [fourColor, setFourColor] = useState(false);
   const [showLog, setShowLog] = useState(false);
@@ -85,7 +86,14 @@ export function PokerTable({ names, format, buyIn, tier, onGameOver, onQuit }: P
       </header>
 
       <div className="table-stage">
-        <div className="table-felt">
+        <div
+          className="table-felt"
+          data-sb={state.blinds.sb}
+          data-bb={state.blinds.bb}
+          data-level={state.level}
+          data-pot={potTotal(state)}
+          data-hand={state.handNumber}
+        >
           <div className="felt-inner">
             <div className="felt-logo">{format.id === "nitro" ? "NITRO" : "EXPRESSO"}</div>
 
@@ -137,7 +145,7 @@ export function PokerTable({ names, format, buyIn, tier, onGameOver, onQuit }: P
                 isDealer={state.dealer === p.id}
                 acting={state.phase === "betting" && state.toAct === p.id}
                 turnKey={`${state.handNumber}-${state.street}-${state.currentBet}-${state.toAct}`}
-                totalTime={HERO_TIME_MS}
+                totalTime={heroTimeMs}
                 winner={winners.has(p.id)}
                 won={state.result?.won[p.id] ?? 0}
                 handName={state.result?.showdown ? (winners.has(p.id) ? (pot?.handName ?? null) : (state.result.hands[p.id] ?? null)) : null}

@@ -69,6 +69,8 @@ function buildReel(buyIn: number, result: number): number[] {
 export function PokerApp() {
   const [stats, setStats] = useState<Stats>(DEFAULT_STATS);
   const [loaded, setLoaded] = useState(false);
+  // `?speed=20` fast-forwards the table, used by the AI trainer.
+  const [speed, setSpeed] = useState(1);
   const [screen, setScreen] = useState<Screen>({ kind: "lobby" });
   const [buyIn, setBuyIn] = useState(1);
   const [formatId, setFormatId] = useState<FormatId>("expresso");
@@ -78,6 +80,8 @@ export function PokerApp() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStats(loadStats());
     setLoaded(true);
+    const requested = Number(new URLSearchParams(window.location.search).get("speed"));
+    if (requested > 1) setSpeed(Math.min(requested, 100));
   }, []);
 
   const updateStats = useCallback((fn: (s: Stats) => Stats) => {
@@ -136,6 +140,7 @@ export function PokerApp() {
         key={screen.gameId}
         names={screen.names}
         format={screen.format}
+        speed={speed}
         buyIn={screen.buyIn}
         tier={screen.tier}
         onGameOver={onGameOver}

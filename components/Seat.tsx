@@ -29,7 +29,7 @@ export function Seat(props: Props) {
 
   if (player.out) {
     return (
-      <div className={`seat seat-${position} seat-out`}>
+      <div className={`seat seat-${position} seat-out`} data-position={position} data-out="true" data-stack={0} data-bet={0}>
         <div className="seat-plate">
           <div className="seat-name">{player.name}</div>
           <div className="seat-stack">{player.place ? `Out · ${placeLabel(player.place)}` : "Out"}</div>
@@ -43,7 +43,17 @@ export function Seat(props: Props) {
   const hasCards = player.hole.length > 0 && !player.folded;
 
   return (
-    <div className={`seat seat-${position} ${acting ? "seat-acting" : ""} ${player.folded ? "seat-folded" : ""} ${winner ? "seat-winner" : ""}`}>
+    <div
+      className={`seat seat-${position} ${acting ? "seat-acting" : ""} ${player.folded ? "seat-folded" : ""} ${winner ? "seat-winner" : ""}`}
+      data-position={position}
+      data-out="false"
+      data-stack={player.stack}
+      data-bet={player.bet}
+      data-folded={player.folded}
+      data-allin={player.allIn}
+      data-dealer={isDealer}
+      data-last-action={player.lastAction ?? ""}
+    >
       <div className={`seat-cards ${isHero ? "seat-cards-hero" : ""}`}>
         {hasCards &&
           player.hole.map((c, i) => (

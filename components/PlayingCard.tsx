@@ -1,4 +1,4 @@
-import { type Card, SUIT_SYMBOL, rankLabel } from "@/lib/poker/cards";
+import { type Card, SUIT_SYMBOL, cardKey, rankLabel } from "@/lib/poker/cards";
 
 interface Props {
   card?: Card;
@@ -22,6 +22,7 @@ export function PlayingCard({ card, faceDown, size = "md", fourColor, dim, highl
       className={`pcard pcard-${size} suit-${card.suit} ${fourColor ? "four-color" : ""} ${dim ? "pcard-dim" : ""} ${highlight ? "pcard-hl" : ""}`}
       style={style}
       aria-label={`${rank}${SUIT_SYMBOL[card.suit]}`}
+      data-card={dim ? undefined : cardKey(card)}
     >
       <span className="pcard-rank">{rank}</span>
       <span className="pcard-suit">{SUIT_SYMBOL[card.suit]}</span>

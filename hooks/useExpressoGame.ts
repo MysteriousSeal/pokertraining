@@ -24,7 +24,12 @@ export interface ExpressoClock {
   remaining: number;
 }
 
-export function useExpressoGame(names: string[], format: Format, onGameOver: (final: GameState) => void) {
+/**
+ * `speed` > 1 fast-forwards the table (bot thinking, pauses and the blind clock)
+ * so automated players can train against the real UI.
+ */
+export function useExpressoGame(names: string[], format: Format, onGameOver: (final: GameState) => void, speed = 1) {
+  const heroTimeMs = speed > 1 ? Math.max(HERO_TIME_MS / speed, 5_000) : HERO_TIME_MS;
   // This component only mounts after a user action (never prerendered), so the
   // shuffle in the lazy initializer runs in the browser.
   const [state, setState] = useState<GameState>(() => startHand(createGame(names, format.startingStack), 0));
@@ -40,13 +45,13 @@ export function useExpressoGame(names: string[], format: Format, onGameOver: (fi
   // Blind level clock. New blinds apply from the next hand, like a real tournament.
   useEffect(() => {
     const id = setInterval(() => {
-      const elapsed = Date.now() - startedAt;
+      const elapsed = (Date.now() - startedAt) * speed;
       const level = Math.floor(elapsed / format.levelMs);
       levelRef.current = level;
-      setClock({ level, remaining: format.levelMs - (elapsed % format.levelMs) });
-    }, 250);
+      setClock({ level, remaining: (format.levelMs - (elapsed % format.levelMs)) / speed });
+    }, 250 / Math.min(speed, 10));
     return () => clearInterval(id);
-  }, [startedAt, format.levelMs]);
+  }, [startedAt, format.levelMs, speed]);
 
   const heroId = state.players.find((p) => p.isHero)!.id;
   const heroToAct = state.phase === "betting" && state.toAct === heroId;
@@ -74,7 +79,7 @@ export function useExpressoGame(names: string[], format: Format, onGameOver: (fi
         const hero = state.players[heroId];
         // Hero busted: no point dealing on, end the game for them.
         if (hero.out) {
-          const id = setTimeout(() => onGameOverRef.current(state), DELAY.gameOver);
+          const id = setTimeout(() => onGameOverRef.current(state), DELAY.gameOver / speed);
           return () => clearTimeout(id);
         }
         delay = state.result?.showdown ? DELAY.handOverShowdown : DELAY.handOverFold;
@@ -82,7 +87,7 @@ export function useExpressoGame(names: string[], format: Format, onGameOver: (fi
         break;
       }
       case "gameOver": {
-        const id = setTimeout(() => onGameOverRef.current(state), DELAY.gameOver);
+        const id = setTimeout(() => onGameOverRef.current(state), DELAY.gameOver / speed);
         return () => clearTimeout(id);
       }
     }
@@ -91,9 +96,9 @@ export function useExpressoGame(names: string[], format: Format, onGameOver: (fi
       // Compute outside the updater: it may run twice in StrictMode and steps are random.
       const next = step(state);
       setState((s) => (s === state ? next : s));
-    }, delay);
+    }, delay / speed);
     return () => clearTimeout(id);
-  }, [state, heroId]);
+  }, [state, heroId, speed]);
 
   const act = useCallback(
     (action: Action) => {
@@ -105,9 +110,9 @@ export function useExpressoGame(names: string[], format: Format, onGameOver: (fi
   // Hero shot clock: auto check, otherwise fold.
   useEffect(() => {
     if (!heroToAct) return;
-    const id = setTimeout(() => act({ type: "fold" }), HERO_TIME_MS);
+    const id = setTimeout(() => act({ type: "fold" }), heroTimeMs);
     return () => clearTimeout(id);
-  }, [heroToAct, state.handNumber, state.street, state.currentBet, act]);
+  }, [heroToAct, state.handNumber, state.street, state.currentBet, act, heroTimeMs]);
 
-  return { state, clock, heroId, heroToAct, act };
+  return { state, clock, heroId, heroToAct, heroTimeMs, act };
 }

@@ -133,22 +133,22 @@ export function ActionBar({ state, heroId, heroToAct, inBB, preAction, onPreActi
       )}
       <div className="action-buttons">
         {legal.canFold && (
-          <button type="button" className="act act-fold" onClick={() => onAct({ type: "fold" })}>
+          <button type="button" className="act act-fold" data-action="fold" onClick={() => onAct({ type: "fold" })}>
             Fold<kbd>F</kbd>
           </button>
         )}
         {legal.canCheck ? (
-          <button type="button" className="act act-call" onClick={() => onAct({ type: "check" })}>
+          <button type="button" className="act act-call" data-action="check" onClick={() => onAct({ type: "check" })}>
             Check<kbd>C</kbd>
           </button>
         ) : (
-          <button type="button" className="act act-call" onClick={() => onAct({ type: "call" })}>
+          <button type="button" className="act act-call" data-action="call" onClick={() => onAct({ type: "call" })}>
             {legal.callAmount >= hero.stack ? "All-in" : "Call"} <strong>{fmt(legal.callAmount)}</strong>
             <kbd>C</kbd>
           </button>
         )}
         {legal.canRaise && (
-          <button type="button" className="act act-raise" onClick={() => onAct({ type: "raise", amount })}>
+          <button type="button" className="act act-raise" data-action="raise" onClick={() => onAct({ type: "raise", amount })}>
             {raiseLabel} <strong>{fmt(amount)}</strong>
             <kbd>R</kbd>
           </button>
