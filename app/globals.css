@@ -342,19 +342,21 @@ button:disabled {
 }
 .advisor-deck-title:first-of-type { margin-top: 0; }
 .advisor-deck-title .muted { font-family: var(--font-body); font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; }
-.advisor-deck { display: grid; gap: 4px; }
-.advisor-deck-row { display: grid; grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 4px; }
+/* Seven cards per row, so each suit takes two rows and every card is a big tap target. */
+.advisor-deck { display: grid; gap: 14px; container-type: inline-size; }
+.advisor-deck-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .advisor-deck-card {
   min-width: 0;
-  aspect-ratio: 0.8;
+  aspect-ratio: 1.15;
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: 7px;
   background: linear-gradient(180deg, #fff, #ececf0);
   color: #111;
   padding: 0;
   font-family: var(--font-display);
-  font-size: clamp(11px, 2vw, 16px);
+  font-size: clamp(20px, 5.5cqw, 34px);
   font-weight: 800;
+  letter-spacing: -0.02em;
   line-height: 1;
   transition: transform 0.12s, box-shadow 0.12s;
 }
@@ -486,6 +488,7 @@ button:disabled {
   .advisor-seat button span { display: none; }
   .advisor-seat button strong { font-size: 15px; letter-spacing: 0.02em; }
   .advisor-card, .advisor-hand-cards .advisor-card-slot { width: 48px; }
+  .advisor-deck-card { aspect-ratio: 1; }
   .advisor-card b { font-size: 22px; }
   .advisor-card em { font-size: 32px; }
   .advisor-legend .muted { margin-left: 0; width: 100%; }
