@@ -156,3 +156,81 @@ export function describeHand(v: HandValue): string {
       return `${SINGULAR[a]} high`;
   }
 }
+
+/* ------------------------------------------------------------- fast scoring */
+
+const SUIT_INDEX: Record<string, number> = { s: 0, h: 1, d: 2, c: 3 };
+const counts = new Uint8Array(15);
+const suitMasks = new Int32Array(4);
+const suitCounts = new Uint8Array(4);
+const singles = new Uint8Array(7);
+const pairs = new Uint8Array(3);
+const trips = new Uint8Array(2);
+
+const packRanks = (category: number, a = 0, b = 0, c = 0, d = 0, e = 0) =>
+  ((((category * 16 + a) * 16 + b) * 16 + c) * 16 + d) * 16 + e;
+
+/**
+ * Same score as `evaluate(cards).score`, without allocating: the hot path for
+ * Monte Carlo equity. Not re-entrant (shared buffers), which is fine in JS.
+ */
+export function evaluateScore(cards: Card[]): number {
+  counts.fill(0);
+  suitMasks.fill(0);
+  suitCounts.fill(0);
+  singles.fill(0);
+  pairs.fill(0);
+  trips.fill(0);
+  let rankMask = 0;
+  for (let i = 0; i < cards.length; i++) {
+    const r = cards[i].rank;
+    const s = SUIT_INDEX[cards[i].suit];
+    counts[r]++;
+    rankMask |= 1 << r;
+    suitMasks[s] |= 1 << r;
+    suitCounts[s]++;
+  }
+
+  let flush = -1;
+  for (let s = 0; s < 4; s++) if (suitCounts[s] >= 5) flush = s;
+  if (flush >= 0) {
+    const sf = straightHigh(suitMasks[flush]);
+    if (sf) return packRanks(HandCategory.StraightFlush, sf);
+  }
+
+  let quad = 0;
+  let nS = 0;
+  let nP = 0;
+  let nT = 0;
+  for (let r = 14; r >= 2; r--) {
+    const n = counts[r];
+    if (n === 4) quad = r;
+    else if (n === 3) trips[nT++] = r;
+    else if (n === 2) pairs[nP++] = r;
+    else if (n === 1) singles[nS++] = r;
+  }
+
+  if (quad) {
+    let kicker = 0;
+    for (let r = 14; r >= 2; r--) if (r !== quad && counts[r]) { kicker = r; break; }
+    return packRanks(HandCategory.Quads, quad, kicker);
+  }
+  if (nT && (nT > 1 || nP)) {
+    return packRanks(HandCategory.FullHouse, trips[0], Math.max(nT > 1 ? trips[1] : 0, nP ? pairs[0] : 0));
+  }
+  if (flush >= 0) {
+    const f = [0, 0, 0, 0, 0];
+    let k = 0;
+    for (let r = 14; r >= 2 && k < 5; r--) if (suitMasks[flush] & (1 << r)) f[k++] = r;
+    return packRanks(HandCategory.Flush, f[0], f[1], f[2], f[3], f[4]);
+  }
+  const st = straightHigh(rankMask);
+  if (st) return packRanks(HandCategory.Straight, st);
+  if (nT) return packRanks(HandCategory.Trips, trips[0], singles[0], nS > 1 ? singles[1] : 0);
+  if (nP >= 2) {
+    const kicker = Math.max(nP > 2 ? pairs[2] : 0, nS ? singles[0] : 0);
+    return packRanks(HandCategory.TwoPair, pairs[0], pairs[1], kicker);
+  }
+  if (nP === 1) return packRanks(HandCategory.Pair, pairs[0], singles[0], singles[1], singles[2]);
+  return packRanks(HandCategory.HighCard, singles[0], singles[1], singles[2], singles[3], singles[4]);
+}

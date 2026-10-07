@@ -54,8 +54,18 @@ ai/.venv/bin/python ai/train.py --resume --minutes 60 -v          # extra detail
 ```
 
 Each update prints the elapsed and remaining time, the games played, the win rate over the last 5,000 games, and the action mix.
-`-v` adds finishing places, hands per game, losses, entropy, KL and the learning rate.
+`-v` adds finishing places, hands per game, losses, entropy, KL, the learning rate, and a timing breakdown (playing vs learning).
 Ctrl+C stops cleanly and saves.
+
+**Speed / CPU:** games are simulated in parallel by `--workers` Node processes (default 6, one CPU core each).
+The network uses `--threads` PyTorch threads (default 2).
+Almost all of the time goes to simulating games, mostly the Monte Carlo equity estimates used by the bots and the agent, not to the network.
+On an 8-core M2, 4–8 workers give about the same speed (~1 s per update of 18k decisions), so adding more processes doesn't help.
+Use `-v` to see the timing breakdown on your machine:
+
+```bash
+ai/.venv/bin/python ai/train.py --resume --minutes 60 --workers 6 --threads 2 -v
+```
 
 ### Evaluate in the simulator
 

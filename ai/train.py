@@ -26,7 +26,8 @@ SHORT = ["fold", "call", "min", "half", "pot", "jam"]
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--minutes", type=float, default=60)
-    ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--workers", type=int, default=6, help="game server processes (one CPU core each)")
+    ap.add_argument("--threads", type=int, default=2, help="PyTorch threads for the network")
     ap.add_argument("--envs", type=int, default=48, help="games per worker")
     ap.add_argument("--steps", type=int, default=64, help="rollout length per game")
     ap.add_argument("--lr", type=float, default=3e-4)
@@ -41,7 +42,7 @@ def main() -> None:
     args = ap.parse_args()
 
     out = Status()
-    torch.set_num_threads(2)
+    torch.set_num_threads(args.threads)
     n_envs = args.workers * args.envs
     T = args.steps
 
@@ -103,6 +104,7 @@ def main() -> None:
 
             # ---- rollout: play T decisions at every table
             policy.eval()
+            pool.server_time = 0.0
             for t in range(T):
                 x = torch.as_tensor(pool.x)
                 m = torch.as_tensor(pool.mask)
@@ -122,6 +124,7 @@ def main() -> None:
             with torch.no_grad():
                 _, next_v = policy(torch.as_tensor(pool.x), torch.as_tensor(pool.mask))
             next_v = next_v.numpy()
+            t_learn = time.time()
 
             # ---- advantages (GAE); a finished game's next observation is a fresh game
             adv = np.zeros_like(buf_r)
@@ -170,6 +173,7 @@ def main() -> None:
                         stats["clip"].append(((ratio - 1).abs() > args.clip).float().mean().item())
 
             # ---- report & checkpoint
+            t_done = time.time()
             update += 1
             places = np.array(recent)
             win = float((places == 1).mean()) if len(places) else 0.0
@@ -193,6 +197,10 @@ def main() -> None:
                     f"loss π {np.mean(stats['pg']):+.4f} V {np.mean(stats['v']):.4f} · "
                     f"entropy {np.mean(stats['ent']):.2f} (bonus {ent_coef:.4f}) · "
                     f"KL {np.mean(stats['kl']):.4f} clipped {np.mean(stats['clip']) * 100:.0f}% · lr {lr:.2e}"
+                )
+                out.line(
+                    f"        time: playing {t_learn - t_update:.1f}s (game servers {pool.server_time:.1f}s) · "
+                    f"learning {t_done - t_learn:.1f}s"
                 )
             if len(places) >= 3000 and win > best:
                 best = win

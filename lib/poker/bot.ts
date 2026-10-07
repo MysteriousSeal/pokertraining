@@ -1,5 +1,5 @@
 import { type Card, fullDeck, randomInt } from "./cards";
-import { evaluate } from "./evaluator";
+import { evaluateScore } from "./evaluator";
 import { type Action, type GameState, legalActions, potTotal } from "./engine";
 
 /** Chen formula: quick preflop hand strength, roughly -1 (72o) to 20 (AA). */
@@ -16,33 +16,43 @@ export function chenScore([a, b]: Card[]): number {
   return Math.ceil(score);
 }
 
-/** Monte Carlo equity of `hole` against `opponents` random hands. Ties count as split. */
+/**
+ * Monte Carlo equity of `hole` against `opponents` random hands. Ties count as split.
+ * Hot path for bots and the AI trainer: uses the fast Math.random (an estimate, not
+ * a deal) and reuses its arrays instead of allocating per sample.
+ */
 export function estimateEquity(hole: Card[], board: Card[], opponents: number, iterations = 300): number {
   const known = new Set([...hole, ...board].map((c) => c.rank * 4 + "shdc".indexOf(c.suit)));
-  const stub = fullDeck().filter((c) => !known.has(c.rank * 4 + "shdc".indexOf(c.suit)));
+  const deck = fullDeck().filter((c) => !known.has(c.rank * 4 + "shdc".indexOf(c.suit)));
+  const n = deck.length;
   const need = 5 - board.length;
+  const draw = need + opponents * 2;
+  const mine: Card[] = [...hole, ...board, ...deck.slice(0, need)];
+  const theirs: Card[] = [deck[0], deck[1], ...board, ...deck.slice(0, need)];
+  const firstDrawn = 2 + board.length;
   let total = 0;
   for (let it = 0; it < iterations; it++) {
-    // Partial Fisher–Yates: draw only the cards we need.
-    const deck = stub.slice();
-    const draw = need + opponents * 2;
+    // Partial Fisher–Yates: draw only the cards we need. Starting from the previous
+    // sample's order is fine: the drawn prefix is still uniformly random.
     for (let i = 0; i < draw; i++) {
-      const j = i + randomInt(deck.length - i);
-      [deck[i], deck[j]] = [deck[j], deck[i]];
+      const j = i + ((Math.random() * (n - i)) | 0);
+      const tmp = deck[i];
+      deck[i] = deck[j];
+      deck[j] = tmp;
     }
-    const fullBoard = board.concat(deck.slice(0, need));
-    const mine = evaluate(hole.concat(fullBoard)).score;
-    let best = 0;
+    for (let k = 0; k < need; k++) mine[firstDrawn + k] = theirs[firstDrawn + k] = deck[k];
+    const my = evaluateScore(mine);
     let ties = 0;
     let lost = false;
     for (let o = 0; o < opponents; o++) {
-      const theirs = evaluate([deck[need + o * 2], deck[need + o * 2 + 1], ...fullBoard]).score;
-      if (theirs > mine) {
+      theirs[0] = deck[need + o * 2];
+      theirs[1] = deck[need + o * 2 + 1];
+      const score = evaluateScore(theirs);
+      if (score > my) {
         lost = true;
         break;
       }
-      if (theirs === mine) ties++;
-      best = Math.max(best, theirs);
+      if (score === my) ties++;
     }
     if (!lost) total += 1 / (ties + 1);
   }

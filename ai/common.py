@@ -59,6 +59,7 @@ class Pool:
     def __init__(self, workers: int, envs_per_worker: int) -> None:
         self.servers = [GameServer() for _ in range(workers)]
         self.n = envs_per_worker
+        self.server_time = 0.0  # seconds spent waiting on game servers
         for s in self.servers:
             s.send({"cmd": "init", "n": envs_per_worker})
         replies = [s.recv() for s in self.servers]
@@ -71,9 +72,11 @@ class Pool:
         return x, mask
 
     def step(self, actions: np.ndarray):
+        t0 = time.time()
         for i, s in enumerate(self.servers):
             s.send({"cmd": "step", "actions": actions[i * self.n : (i + 1) * self.n].tolist()})
         replies = [s.recv() for s in self.servers]
+        self.server_time += time.time() - t0
         self.x, self.mask = self._stack(replies)
         reward = np.concatenate([r["reward"] for r in replies]).astype(np.float32)
         done = np.concatenate([r["done"] for r in replies]).astype(bool)

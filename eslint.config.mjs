@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // AI trainer's Python environment and outputs.
+    "ai/.venv/**",
+    "ai/checkpoints/**",
+    "ai/logs/**",
   ]),
 ]);
 
