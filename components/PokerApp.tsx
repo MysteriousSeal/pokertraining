@@ -155,7 +155,13 @@ export function PokerApp() {
     const won = screen.place === 1;
     return (
       <div className="result-screen">
-        <div className={`result-card ${won ? "result-win" : ""}`}>
+        <div
+          className={`result-card ${won ? "result-win" : ""}`}
+          data-place={screen.place}
+          data-prize={screen.prize}
+          data-buyin={screen.buyIn}
+          data-multiplier={screen.tier.multiplier}
+        >
           <div className="result-place">{ordinal(screen.place)}</div>
           <div className="result-title">{won ? `You won the ${screen.format.name}!` : screen.prize > 0 ? "In the money" : "Eliminated"}</div>
           <div className="result-prize">{screen.prize > 0 ? `+${formatMoney(screen.prize)}` : formatMoney(0)}</div>
@@ -220,7 +226,7 @@ export function PokerApp() {
 
         <div className="buyins">
           {BUY_INS.map((b) => (
-            <button key={b} type="button" className={`buyin ${buyIn === b ? "on" : ""}`} onClick={() => setBuyIn(b)} disabled={loaded && stats.bankroll < b}>
+            <button key={b} type="button" className={`buyin ${buyIn === b ? "on" : ""}`} data-buyin={b} onClick={() => setBuyIn(b)} disabled={loaded && stats.bankroll < b}>
               <span className="buyin-amount">{formatMoney(b)}</span>
               <span className="buyin-max">up to {formatMoney(maxJackpot(b))}</span>
             </button>

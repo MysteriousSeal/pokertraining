@@ -47,6 +47,16 @@ READ_TABLE = """() => {
   };
 }"""
 
+ORDINAL = {1: "1st", 2: "2nd", 3: "3rd"}
+
+
+def money(v: float, sign: bool = False) -> str:
+    text = f"€{abs(v):,.2f}"
+    if v < 0:
+        return "-" + text
+    return ("+" if sign else "") + text
+
+
 PROFILE = {"bankroll": 1e9, "played": 0, "wins": 0, "profit": 0, "heroName": "AI"}
 
 
@@ -55,6 +65,7 @@ def main() -> None:
     ap.add_argument("--url", default="http://localhost:3000")
     ap.add_argument("--speed", type=int, default=30)
     ap.add_argument("--games", type=int, default=100)
+    ap.add_argument("--buy-in", type=float, default=1, help="stake per game in € (0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500)")
     ap.add_argument("--checkpoint", type=Path, default=CHECKPOINTS / "best.pt")
     ap.add_argument("--headed", action="store_true", help="show the browser window")
     args = ap.parse_args()
@@ -62,6 +73,9 @@ def main() -> None:
     policy = load(args.checkpoint)
     features = GameServer()
     places: list[int] = []
+    bet_total = 0.0
+    won_total = 0.0
+    multipliers: list[int] = []
     decisions = 0
     t0 = time.time()
 
@@ -70,16 +84,25 @@ def main() -> None:
         page = browser.new_page(viewport={"width": 1280, "height": 800})
         page.add_init_script(f"localStorage.setItem('expresso-trainer:v1', JSON.stringify({json.dumps(PROFILE)}))")
         page.goto(f"{args.url}/?speed={args.speed}")
+        page.click(f'.buyin[data-buyin="{args.buy_in:g}"]')
         page.get_by_role("button", name="Play Expresso ·").click()
 
         last_decision = None
         while len(places) < args.games:
-            result = page.query_selector(".result-place")
+            result = page.query_selector(".result-card")
             if result:
-                place = int(result.inner_text()[0])
+                d = result.evaluate("(el) => ({...el.dataset})")
+                place, prize, buy_in, mult = int(d["place"]), float(d["prize"]), float(d["buyin"]), int(d["multiplier"])
                 places.append(place)
+                multipliers.append(mult)
+                bet_total += buy_in
+                won_total += prize
                 wins = places.count(1)
-                print(f"game {len(places):4d}: {result.inner_text():>3}   win rate {wins / len(places) * 100:5.1f}%", flush=True)
+                print(
+                    f"game {len(places):4d}: {ORDINAL[place]}  x{mult:<6,}  bet {money(buy_in)}  won {money(prize):>9}   "
+                    f"win rate {wins / len(places) * 100:5.1f}%   net {money(won_total - bet_total, sign=True)}",
+                    flush=True,
+                )
                 page.get_by_role("button", name="Play again").click()
                 continue
 
@@ -119,8 +142,13 @@ def main() -> None:
     p = np.array(places)
     win = (p == 1).mean()
     ci = 1.96 * math.sqrt(win * (1 - win) / len(p))
+    net = won_total - bet_total
     print(f"\n{len(p)} browser games in {(time.time() - t0) / 60:.1f} min, {decisions} decisions")
     print(f"win {win * 100:.1f}% ± {ci * 100:.1f}   places 1/2/3 = {np.bincount(p, minlength=4)[1:].tolist()}")
+    print(f"multipliers drawn: " + ", ".join(f"x{m:,}×{multipliers.count(m)}" for m in sorted(set(multipliers))))
+    print(f"amount bet: {money(bet_total)}")
+    print(f"amount won: {money(won_total)}")
+    print(f"net result: {money(net, sign=True)}   (ROI {net / bet_total * 100:+.1f}%)")
 
 
 if __name__ == "__main__":

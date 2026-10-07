@@ -83,7 +83,28 @@ ai/.venv/bin/python ai/play_browser.py --games 100 --speed 30           # headle
 ai/.venv/bin/python ai/play_browser.py --games 20 --speed 10 --headed   # watch it play
 ```
 
+```bash
+ai/.venv/bin/python ai/play_browser.py --games 20 --buy-in 5            # stake per game in € (default 1)
+ai/.venv/bin/python ai/play_browser.py --games 50 --checkpoint ai/checkpoints/latest.pt
+```
+
 `?speed=N` on the game URL fast-forwards bot thinking, pauses and the blind clock.
+The agent uses `best.pt` by default and always plays its most likely action.
+
+The console prints one line per game (place, multiplier, buy-in, prize, running win rate and net).
+With `--headed` it also prints each decision.
+At the end it prints a summary:
+
+```
+20 browser games in 3.1 min, 640 decisions
+win 55.0% ± 21.8   places 1/2/3 = [11, 3, 6]
+multipliers drawn: x2×12, x3×6, x4×2
+amount bet: €20.00
+amount won: €28.00
+net result: +€8.00   (ROI +40.0%)
+```
+
+Amounts are read from the game's own result screen.
 
 ### Baselines
 
