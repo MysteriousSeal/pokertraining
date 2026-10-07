@@ -109,13 +109,13 @@ button:disabled {
   font-weight: 800;
   font-size: 15px;
 }
-.mult-chip.mult-2 { background: #3a3a46; }
-.mult-chip.mult-3 { background: #2563eb; }
-.mult-chip.mult-5 { background: #16a34a; }
-.mult-chip.mult-10 { background: #9333ea; }
-.mult-chip.mult-100 { background: #ea580c; }
-.mult-chip.mult-1000 { background: var(--red); }
-.mult-chip.mult-10000 { background: linear-gradient(90deg, #f5c542, #ff8a00); color: #1a1000; }
+.mult-chip.mult-a { background: #3a3a46; }
+.mult-chip.mult-b { background: #2563eb; }
+.mult-chip.mult-c { background: #16a34a; }
+.mult-chip.mult-d { background: #9333ea; }
+.mult-chip.mult-e { background: #ea580c; }
+.mult-chip.mult-f { background: var(--red); }
+.mult-chip.mult-g { background: linear-gradient(90deg, #f5c542, #ff8a00); color: #1a1000; }
 
 /* ------------------------------------------------------------------ lobby */
 
@@ -260,11 +260,45 @@ button:disabled {
   margin-bottom: 8px;
 }
 .odds-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
   align-items: center;
+  gap: 8px;
   padding: 3px 0;
   font-size: 14px;
+}
+.odds-prize {
+  font-weight: 600;
+}
+.odds-note {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.formats {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.format {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 10px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-align: left;
+}
+.format.on {
+  border-color: var(--red);
+  background: linear-gradient(180deg, rgb(227 0 27 / 0.22), rgb(227 0 27 / 0.06));
+}
+.format-name {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 20px;
+  text-transform: uppercase;
 }
 .lobby-settings {
   display: flex;
@@ -347,13 +381,13 @@ button:disabled {
   place-items: center;
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: 64px;
+  font-size: 56px;
   line-height: 1;
 }
-.wheel-item.mult-10,
-.wheel-item.mult-100 { color: #ff8a3d; }
-.wheel-item.mult-1000 { color: var(--red-2); }
-.wheel-item.mult-10000 { color: var(--gold); }
+.wheel-item.mult-d,
+.wheel-item.mult-e { color: #ff8a3d; }
+.wheel-item.mult-f { color: var(--red-2); }
+.wheel-item.mult-g { color: var(--gold); }
 .wheel-prize {
   text-align: center;
   font-size: 22px;

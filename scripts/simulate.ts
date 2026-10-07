@@ -28,7 +28,7 @@ const TOTAL = 1500;
 let hands = 0;
 const wins = [0, 0, 0];
 for (let g = 0; g < games; g++) {
-  let s: GameState = createGame(["A", "B", "C"]);
+  let s: GameState = createGame(["A", "B", "C"], 500);
   let level = 0;
   let guard = 0;
   while (s.phase !== "gameOver") {
@@ -53,7 +53,7 @@ console.log(`OK: ${games} games, ${hands} hands, avg ${(hands / games).toFixed(1
 
 // Deterministic side pot: A (100) has the best hand, B (300) second, C (300) worst.
 {
-  let s = createGame(["A", "B", "C"]);
+  let s = createGame(["A", "B", "C"], 500);
   s.players[0].stack = 100; s.players[1].stack = 300; s.players[2].stack = 300;
   s.dealer = 2; // button moves to A
   s = startHand(s, 0);

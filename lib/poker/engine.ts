@@ -1,6 +1,6 @@
 import { type Card, fullDeck, shuffle, randomInt } from "./cards";
 import { describeHand, evaluate } from "./evaluator";
-import { STARTING_STACK, blindsAt, type BlindLevel } from "./expresso";
+import { blindsAt, type BlindLevel } from "./expresso";
 
 export type Street = "preflop" | "flop" | "turn" | "river";
 
@@ -135,16 +135,16 @@ function log(s: GameState, line: string) {
 
 /* --------------------------------------------------------------- lifecycle */
 
-export function createGame(names: string[], heroIndex = 0): GameState {
+export function createGame(names: string[], startingStack: number, heroIndex = 0): GameState {
   const players: Player[] = names.map((name, id) => ({
     id,
     name,
     isHero: id === heroIndex,
-    stack: STARTING_STACK,
+    stack: startingStack,
     hole: [],
     bet: 0,
     committed: 0,
-    stackAtStart: STARTING_STACK,
+    stackAtStart: startingStack,
     folded: false,
     allIn: false,
     out: false,

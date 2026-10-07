@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { formatMoney, type MultiplierTier } from "@/lib/poker/expresso";
+import { formatMoney, multiplierClass, type MultiplierTier } from "@/lib/poker/expresso";
 
 interface Props {
   reel: number[];
@@ -30,7 +30,7 @@ export function MultiplierWheel({ reel, tier, buyIn, onDone }: Props) {
   }, [onDone]);
 
   const offset = spinning ? (reel.length - 1) * ITEM_H : 0;
-  const big = tier.multiplier >= 10;
+  const big = tier.multiplier >= 20;
 
   return (
     <div className="wheel-screen">
@@ -45,7 +45,7 @@ export function MultiplierWheel({ reel, tier, buyIn, onDone }: Props) {
             }}
           >
             {reel.map((m, i) => (
-              <div key={i} className={`wheel-item mult-${m}`} style={{ height: ITEM_H }}>
+              <div key={i} className={`wheel-item ${multiplierClass(m)}`} style={{ height: ITEM_H }}>
                 x{m.toLocaleString("en-GB")}
               </div>
             ))}
@@ -56,7 +56,7 @@ export function MultiplierWheel({ reel, tier, buyIn, onDone }: Props) {
         Prize pool <strong>{formatMoney(buyIn * tier.multiplier)}</strong>
         <div className="muted">
           {tier.payouts[1] > 0
-            ? `1st ${formatMoney(buyIn * tier.multiplier * tier.payouts[0])} · 2nd & 3rd ${formatMoney(buyIn * tier.multiplier * tier.payouts[1])}`
+            ? `1st ${formatMoney(buyIn * tier.multiplier * tier.payouts[0])} · 2nd ${formatMoney(buyIn * tier.multiplier * tier.payouts[1])} · 3rd ${formatMoney(buyIn * tier.multiplier * tier.payouts[2])}`
             : "Winner takes all"}
         </div>
       </div>

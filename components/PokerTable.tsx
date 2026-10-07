@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { GameState } from "@/lib/poker/engine";
 import { collectedPot, potTotal } from "@/lib/poker/engine";
-import { blindsAt, formatMoney, type MultiplierTier } from "@/lib/poker/expresso";
+import { blindsAt, formatMoney, multiplierClass, type Format, type MultiplierTier } from "@/lib/poker/expresso";
 import { HERO_TIME_MS, useExpressoGame } from "@/hooks/useExpressoGame";
 import { PlayingCard } from "./PlayingCard";
 import { Seat } from "./Seat";
@@ -12,6 +12,7 @@ import { formatChips, formatClock } from "./format";
 
 interface Props {
   names: string[];
+  format: Format;
   buyIn: number;
   tier: MultiplierTier;
   onGameOver: (final: GameState) => void;
@@ -20,8 +21,8 @@ interface Props {
 
 const POSITIONS = ["bottom", "left", "right"] as const;
 
-export function PokerTable({ names, buyIn, tier, onGameOver, onQuit }: Props) {
-  const { state, clock, heroId, heroToAct, act } = useExpressoGame(names, onGameOver);
+export function PokerTable({ names, format, buyIn, tier, onGameOver, onQuit }: Props) {
+  const { state, clock, heroId, heroToAct, act } = useExpressoGame(names, format, onGameOver);
   const [inBB, setInBB] = useState(false);
   const [fourColor, setFourColor] = useState(false);
   const [showLog, setShowLog] = useState(false);
@@ -54,11 +55,13 @@ export function PokerTable({ names, buyIn, tier, onGameOver, onQuit }: Props) {
           ← Lobby
         </button>
         <div className="header-prize">
-          <span className="mult-chip">x{tier.multiplier}</span>
+          <span className={`mult-chip ${multiplierClass(tier.multiplier)}`}>x{tier.multiplier.toLocaleString("en-GB")}</span>
           <span>
             Prize pool <strong>{formatMoney(prize)}</strong>
           </span>
-          <span className="muted">Buy-in {formatMoney(buyIn)}</span>
+          <span className="muted">
+            {format.name} · Buy-in {formatMoney(buyIn)}
+          </span>
         </div>
         <div className="header-level">
           <div>
@@ -84,7 +87,7 @@ export function PokerTable({ names, buyIn, tier, onGameOver, onQuit }: Props) {
       <div className="table-stage">
         <div className="table-felt">
           <div className="felt-inner">
-            <div className="felt-logo">EXPRESSO</div>
+            <div className="felt-logo">{format.id === "nitro" ? "NITRO" : "EXPRESSO"}</div>
 
             <div className="pot">
               {potTotal(state) > 0 && !state.result && (

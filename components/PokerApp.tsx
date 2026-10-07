@@ -3,7 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameState } from "@/lib/poker/engine";
 import { ordinal } from "@/lib/poker/engine";
-import { BUY_INS, MULTIPLIERS, drawMultiplier, formatMoney, type MultiplierTier } from "@/lib/poker/expresso";
+import {
+  BUY_INS,
+  FORMATS,
+  drawMultiplier,
+  formatMoney,
+  maxJackpot,
+  multiplierClass,
+  multiplierTiers,
+  type Format,
+  type FormatId,
+  type MultiplierTier,
+} from "@/lib/poker/expresso";
 import { randomInt, shuffle } from "@/lib/poker/cards";
 import { MultiplierWheel } from "./MultiplierWheel";
 import { PokerTable } from "./PokerTable";
@@ -28,9 +39,9 @@ const DEFAULT_STATS: Stats = { bankroll: START_BANKROLL, played: 0, wins: 0, pro
 
 type Screen =
   | { kind: "lobby" }
-  | { kind: "wheel"; buyIn: number; tier: MultiplierTier; reel: number[]; names: string[] }
-  | { kind: "table"; buyIn: number; tier: MultiplierTier; names: string[]; gameId: number }
-  | { kind: "result"; buyIn: number; tier: MultiplierTier; place: number; prize: number; names: string[] };
+  | { kind: "wheel"; format: Format; buyIn: number; tier: MultiplierTier; reel: number[]; names: string[] }
+  | { kind: "table"; format: Format; buyIn: number; tier: MultiplierTier; names: string[]; gameId: number }
+  | { kind: "result"; format: Format; buyIn: number; tier: MultiplierTier; place: number; prize: number };
 
 function loadStats(): Stats {
   try {
@@ -47,8 +58,8 @@ function saveStats(s: Stats) {
 }
 
 /** Reel of decoy multipliers ending on the real draw. */
-function buildReel(result: number): number[] {
-  const decoys = MULTIPLIERS.map((m) => m.multiplier);
+function buildReel(buyIn: number, result: number): number[] {
+  const decoys = multiplierTiers(buyIn).map((m) => m.multiplier);
   const reel: number[] = [];
   for (let i = 0; i < 34; i++) reel.push(decoys[randomInt(decoys.length)]);
   reel.push(result);
@@ -60,6 +71,7 @@ export function PokerApp() {
   const [loaded, setLoaded] = useState(false);
   const [screen, setScreen] = useState<Screen>({ kind: "lobby" });
   const [buyIn, setBuyIn] = useState(1);
+  const [formatId, setFormatId] = useState<FormatId>("expresso");
 
   useEffect(() => {
     // localStorage only exists in the browser, so load after mount.
@@ -76,16 +88,16 @@ export function PokerApp() {
     });
   }, []);
 
-  const register = (amount: number) => {
+  const register = (amount: number, format: Format) => {
     if (stats.bankroll < amount) return;
     updateStats((s) => ({ ...s, bankroll: +(s.bankroll - amount).toFixed(2), played: s.played + 1, profit: +(s.profit - amount).toFixed(2) }));
-    const tier = drawMultiplier();
+    const tier = drawMultiplier(amount);
     const names = [stats.heroName || "You", ...shuffle(BOT_NAMES).slice(0, 2)];
-    setScreen({ kind: "wheel", buyIn: amount, tier, reel: buildReel(tier.multiplier), names });
+    setScreen({ kind: "wheel", format, buyIn: amount, tier, reel: buildReel(amount, tier.multiplier), names });
   };
 
   const onWheelDone = useCallback(() => {
-    setScreen((s) => (s.kind === "wheel" ? { kind: "table", buyIn: s.buyIn, tier: s.tier, names: s.names, gameId: Date.now() } : s));
+    setScreen((s) => (s.kind === "wheel" ? { kind: "table", format: s.format, buyIn: s.buyIn, tier: s.tier, names: s.names, gameId: Date.now() } : s));
   }, []);
 
   const screenRef = useRef(screen);
@@ -107,7 +119,7 @@ export function PokerApp() {
           profit: +(st.profit + prize).toFixed(2),
           wins: st.wins + (place === 1 ? 1 : 0),
         }));
-      const next: Screen = { kind: "result", buyIn: s.buyIn, tier: s.tier, place, prize, names: s.names };
+      const next: Screen = { kind: "result", format: s.format, buyIn: s.buyIn, tier: s.tier, place, prize };
       screenRef.current = next;
       setScreen(next);
     },
@@ -123,6 +135,7 @@ export function PokerApp() {
       <PokerTable
         key={screen.gameId}
         names={screen.names}
+        format={screen.format}
         buyIn={screen.buyIn}
         tier={screen.tier}
         onGameOver={onGameOver}
@@ -139,13 +152,13 @@ export function PokerApp() {
       <div className="result-screen">
         <div className={`result-card ${won ? "result-win" : ""}`}>
           <div className="result-place">{ordinal(screen.place)}</div>
-          <div className="result-title">{won ? "You won the Expresso!" : "Eliminated"}</div>
+          <div className="result-title">{won ? `You won the ${screen.format.name}!` : screen.prize > 0 ? "In the money" : "Eliminated"}</div>
           <div className="result-prize">{screen.prize > 0 ? `+${formatMoney(screen.prize)}` : formatMoney(0)}</div>
           <div className="muted">
-            x{screen.tier.multiplier} · Buy-in {formatMoney(screen.buyIn)} · Bankroll {formatMoney(stats.bankroll)}
+            x{screen.tier.multiplier.toLocaleString("en-GB")} · {screen.format.name} {formatMoney(screen.buyIn)} · Bankroll {formatMoney(stats.bankroll)}
           </div>
           <div className="result-actions">
-            <button type="button" className="primary-btn" disabled={stats.bankroll < screen.buyIn} onClick={() => register(screen.buyIn)}>
+            <button type="button" className="primary-btn" disabled={stats.bankroll < screen.buyIn} onClick={() => register(screen.buyIn, screen.format)}>
               Play again · {formatMoney(screen.buyIn)}
             </button>
             <button type="button" className="ghost-btn" onClick={() => setScreen({ kind: "lobby" })}>
@@ -164,7 +177,7 @@ export function PokerApp() {
           <span className="brand-mark">E</span>
           <div>
             <div className="brand-name">Expresso Trainer</div>
-            <div className="muted">3-max hyper-turbo · 500 chips · play money</div>
+            <div className="muted">3-max hyper-turbo · play money</div>
           </div>
         </div>
         <div className="bankroll">
@@ -178,20 +191,39 @@ export function PokerApp() {
           Spin up an <em>Expresso</em>
         </h1>
         <p className="muted">
-          Three players, one winner. The prize pool is drawn before the first hand, from x2 up to x10,000 your buy-in.
+          Three players, one winner. The prize pool is drawn before the first hand, from x2 up to {formatMoney(maxJackpot(buyIn))}{" "}
+          for a {formatMoney(buyIn)} buy-in.
         </p>
+
+        <div className="formats" role="radiogroup" aria-label="Format">
+          {Object.values(FORMATS).map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              role="radio"
+              aria-checked={formatId === f.id}
+              className={`format ${formatId === f.id ? "on" : ""}`}
+              onClick={() => setFormatId(f.id)}
+            >
+              <span className="format-name">{f.name}</span>
+              <span className="muted">
+                {f.startingStack} chips · {formatLevel(f.levelMs)} levels · blinds 10/20
+              </span>
+            </button>
+          ))}
+        </div>
 
         <div className="buyins">
           {BUY_INS.map((b) => (
             <button key={b} type="button" className={`buyin ${buyIn === b ? "on" : ""}`} onClick={() => setBuyIn(b)} disabled={loaded && stats.bankroll < b}>
               <span className="buyin-amount">{formatMoney(b)}</span>
-              <span className="buyin-max">up to {formatMoney(b * 10000)}</span>
+              <span className="buyin-max">up to {formatMoney(maxJackpot(b))}</span>
             </button>
           ))}
         </div>
 
-        <button type="button" className="primary-btn play-btn" disabled={!loaded || stats.bankroll < buyIn} onClick={() => register(buyIn)}>
-          Play · {formatMoney(buyIn)}
+        <button type="button" className="primary-btn play-btn" disabled={!loaded || stats.bankroll < buyIn} onClick={() => register(buyIn, FORMATS[formatId])}>
+          Play {FORMATS[formatId].name} · {formatMoney(buyIn)}
         </button>
 
         <div className="lobby-bottom">
@@ -211,13 +243,15 @@ export function PokerApp() {
           </div>
 
           <div className="odds">
-            <div className="odds-title">Multipliers</div>
-            {MULTIPLIERS.slice().reverse().map((m) => (
+            <div className="odds-title">Jackpots · {formatMoney(buyIn)}</div>
+            {multiplierTiers(buyIn).slice().reverse().map((m) => (
               <div key={m.multiplier} className="odds-row">
-                <span className={`mult-chip mult-${m.multiplier}`}>x{m.multiplier.toLocaleString("en-GB")}</span>
-                <span className="muted">{formatOdds(m.weight)}</span>
+                <span className={`mult-chip ${multiplierClass(m.multiplier)}`}>x{m.multiplier.toLocaleString("en-GB")}</span>
+                <span className="odds-prize">{formatMoney(buyIn * m.multiplier)}</span>
+                <span className="muted">{formatOdds(m)}</span>
               </div>
             ))}
+            <div className="odds-note muted">From x50 the jackpot is split 80% / 12% / 8%.</div>
           </div>
 
           <div className="lobby-settings">
@@ -245,9 +279,14 @@ export function PokerApp() {
   );
 }
 
-function formatOdds(weight: number) {
-  const total = MULTIPLIERS.reduce((s, m) => s + m.weight, 0);
-  const pct = (weight / total) * 100;
-  if (pct >= 1) return `${pct.toFixed(pct >= 10 ? 0 : 1)}%`;
-  return `1 in ${Math.round(total / weight).toLocaleString("en-GB")}`;
+function formatOdds({ weight, outOf }: MultiplierTier) {
+  const pct = (weight / outOf) * 100;
+  if (pct >= 1) return `${pct.toFixed(pct >= 10 ? 1 : 2)}%`;
+  return `1 in ${Math.round(outOf / weight).toLocaleString("en-GB")}`;
+}
+
+function formatLevel(ms: number) {
+  const min = Math.floor(ms / 60_000);
+  const sec = (ms % 60_000) / 1000;
+  return sec ? `${min} min ${sec}` : `${min} min`;
 }

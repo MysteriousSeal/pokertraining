@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Action, type GameState, advance, applyAction, createGame, startHand } from "@/lib/poker/engine";
 import { decideBotAction } from "@/lib/poker/bot";
-import { LEVEL_DURATION_MS } from "@/lib/poker/expresso";
+import type { Format } from "@/lib/poker/expresso";
 import { randomInt } from "@/lib/poker/cards";
 
 export const HERO_TIME_MS = 15_000;
@@ -24,12 +24,12 @@ export interface ExpressoClock {
   remaining: number;
 }
 
-export function useExpressoGame(names: string[], onGameOver: (final: GameState) => void) {
+export function useExpressoGame(names: string[], format: Format, onGameOver: (final: GameState) => void) {
   // This component only mounts after a user action (never prerendered), so the
   // shuffle in the lazy initializer runs in the browser.
-  const [state, setState] = useState<GameState>(() => startHand(createGame(names), 0));
+  const [state, setState] = useState<GameState>(() => startHand(createGame(names, format.startingStack), 0));
   const [startedAt] = useState(() => Date.now());
-  const [clock, setClock] = useState<ExpressoClock>({ level: 0, remaining: LEVEL_DURATION_MS });
+  const [clock, setClock] = useState<ExpressoClock>({ level: 0, remaining: format.levelMs });
   const levelRef = useRef(0);
   const onGameOverRef = useRef(onGameOver);
 
@@ -41,12 +41,12 @@ export function useExpressoGame(names: string[], onGameOver: (final: GameState) 
   useEffect(() => {
     const id = setInterval(() => {
       const elapsed = Date.now() - startedAt;
-      const level = Math.floor(elapsed / LEVEL_DURATION_MS);
+      const level = Math.floor(elapsed / format.levelMs);
       levelRef.current = level;
-      setClock({ level, remaining: LEVEL_DURATION_MS - (elapsed % LEVEL_DURATION_MS) });
+      setClock({ level, remaining: format.levelMs - (elapsed % format.levelMs) });
     }, 250);
     return () => clearInterval(id);
-  }, [startedAt]);
+  }, [startedAt, format.levelMs]);
 
   const heroId = state.players.find((p) => p.isHero)!.id;
   const heroToAct = state.phase === "betting" && state.toAct === heroId;
