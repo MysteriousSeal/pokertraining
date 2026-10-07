@@ -215,6 +215,10 @@ button:disabled {
 .advisor-card b { position: absolute; left: 8%; top: 4%; font-size: 26px; line-height: 1; letter-spacing: -0.05em; }
 .advisor-card i { position: absolute; left: 10%; top: 40%; font-size: 18px; line-height: 1; font-style: normal; }
 .advisor-card em { position: absolute; right: 2%; bottom: -8%; font-size: 40px; line-height: 1; font-style: normal; opacity: 0.9; }
+.advisor-card.sm { width: 46px; border-radius: 5px; }
+.advisor-card.sm b { font-size: 20px; }
+.advisor-card.sm i { font-size: 14px; }
+.advisor-card.sm em { font-size: 30px; }
 .advisor-hand-name { display: grid; gap: 2px; }
 .advisor-hand-name .muted { font-size: 13px; }
 .advisor-hand-name strong {
@@ -245,6 +249,7 @@ button:disabled {
 .advisor-best.kind-call strong { color: var(--call); }
 .advisor-best.kind-allin strong { color: var(--red-2); }
 .advisor-best strong.pending { color: var(--muted); font-weight: 600; }
+.advisor-best strong.advisor-outcome { color: var(--text); font-size: 24px; font-weight: 700; line-height: 1.2; text-transform: none; }
 .advisor-stats { font-size: 14px; color: var(--muted); }
 .advisor-stats b { color: var(--text); font-weight: 600; }
 .advisor-stats i { margin: 0 8px; font-style: normal; }
@@ -253,15 +258,24 @@ button:disabled {
 .advisor-option {
   position: relative;
   display: flex;
+  width: 100%;
   justify-content: space-between;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 7px;
+  background: transparent;
   padding: 8px 12px;
   font-size: 14px;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s;
 }
+.advisor-option:hover { background: rgb(255 255 255 / 0.04); }
+.advisor-option:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.advisor-option.picked { border-color: #fff; box-shadow: inset 0 0 0 1px #fff; }
+.advisor-option.picked span::after { content: "you"; margin-left: 8px; color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
 .advisor-option > *:not(i) { position: relative; z-index: 1; }
 .advisor-option b { font-variant-numeric: tabular-nums; }
+.advisor-option small { margin-left: 8px; color: var(--muted); font-size: 12px; }
 .advisor-option i {
   position: absolute;
   inset: 0 auto 0 0;
@@ -271,6 +285,70 @@ button:disabled {
 .advisor-option.best { border-color: var(--gold); }
 .advisor-option.best i { background: rgb(245 197 66 / 0.22); }
 
+.advisor-next {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.advisor-next .primary-btn { padding: 12px 24px; font-size: 18px; white-space: nowrap; }
+.advisor-next .muted { display: grid; flex: 1; min-width: 0; font-size: 13px; line-height: 1.35; }
+.advisor-next small { font-size: 12px; }
+.advisor-next .primary-btn:disabled { box-shadow: none; }
+.advisor-history { margin: 0 0 20px; padding: 0 0 0 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.advisor-history li::marker { color: var(--gold); }
+
+/* Board picker, shown once the hand goes past preflop */
+.advisor-board-head { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.advisor-board-head .muted { font-size: 13px; }
+.advisor-board-title {
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.advisor-board-cards { display: flex; gap: 6px; margin-bottom: 16px; }
+.advisor-card-slot {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  aspect-ratio: 0.7;
+  border: 1px dashed var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.advisor-card-slot.wanted { border-color: var(--gold); color: var(--gold); }
+.advisor-board-input { margin-bottom: 16px; }
+.advisor-board-input input { font-size: 18px; }
+.advisor-deck { display: grid; gap: 4px; }
+.advisor-deck-row { display: grid; grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 4px; }
+.advisor-deck-card {
+  min-width: 0;
+  aspect-ratio: 0.8;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: linear-gradient(180deg, #fff, #ececf0);
+  color: #111;
+  padding: 0;
+  font-family: var(--font-display);
+  font-size: clamp(11px, 2vw, 16px);
+  font-weight: 800;
+  line-height: 1;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.advisor-deck-card.suit-h, .advisor-deck-card.suit-d { color: #d4001a; }
+.advisor-deck-card:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 10px rgb(0 0 0 / 0.5); }
+.advisor-deck-card:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.advisor-deck-card.selected { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--gold); }
+.advisor-deck-card.in-hand { opacity: 0.25; }
+.advisor-deck-card:disabled:not(.selected):not(.in-hand) { opacity: 0.35; }
+.advisor-deck-card.selected:disabled { opacity: 0.85; cursor: default; }
 .advisor-hand-input { display: block; }
 .advisor-hand-input > span {
   display: block;
@@ -302,6 +380,7 @@ button:disabled {
 @media (max-width: 860px) {
   .advisor-layout { grid-template-columns: 1fr; }
   .advisor-verdict { order: -1; }
+  .advisor-board { order: -2; }
   .advisor-probabilities { margin-bottom: 14px; }
 }
 @media (max-width: 480px) {
@@ -317,7 +396,8 @@ button:disabled {
   .advisor-legend .muted { margin-left: 0; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .advisor-cell, .advisor-option i { transition: none; }
+  .advisor-cell, .advisor-option i, .advisor-deck-card { transition: none; }
+  .advisor-deck-card:hover:not(:disabled) { transform: none; }
   .advisor-cell:hover { transform: none; }
   .advisor-cell.pending { animation: none; opacity: 0.5; }
 }
