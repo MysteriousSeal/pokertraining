@@ -8,7 +8,7 @@ A 3-handed hyper-turbo sit & go modelled on Winamax Expresso: you play against t
   - Both start at 10/20, and new blinds apply from the next hand.
 - **Prize pool:** buy-in × a multiplier drawn on a reel before the first hand, using Winamax's official odds for each buy-in (€0.25 to €500, jackpots up to x500,000). The winner takes all below x50. From x50 the jackpot is split 80% / 12% / 8%.
 - **Rules:** full No-Limit Hold'em, including heads-up button/blind rules, side pots, uncalled bets returned, and incomplete all-in raises that don't reopen the betting.
-- **Bots:** two levels, picked in the lobby (Easy, Hard, or Mixed: one of each). Each bot's level is shown on its seat.
+- **Bots:** two levels, picked in the lobby (Easy, Hard, or Mixed: one of each). As on Winamax, the table doesn't show which is which.
   - **Easy:** fixed rules. It plays all-in-or-fold with short stacks using the Chen formula, opens, 3-bets and calls when deeper, and compares its equity against a *random* hand to the pot odds after the flop. It has no memory.
   - **Hard:** shoves from **equilibrium push/fold charts** when short-stacked. It judges calls by its equity against the opponent's **likely range**, read from their actions this hand and their habits so far: someone who shoves constantly gets a wide range and gets called lighter. After the flop it narrows ranges from betting, then value-bets, bluffs and folds accordingly.
 - **Table:** a 15 s shot clock (auto check/fold), Check/Fold and Call any pre-actions, preset bet sizes and a slider, BB display, a four-colour deck and a hand history.
@@ -58,11 +58,12 @@ It trains in a headless simulator that runs the same TypeScript engine and bots 
 Then it plays the real game in Chrome, reading the table from the page and clicking the buttons.
 
 **One model for every bot level.** By default each training game seats a random mix: two easy bots, two hard bots, or one of each (`--opponents mix`).
-The model reads each opponent's level from the table, like everything else it sees.
-So `ai/checkpoints/best.pt` is a single model meant to play well against any combination.
+The model only sees what a **real Winamax table shows**: its cards, the board, stacks, bets, the pot, the blinds and level, the dealer button, each player's last action, and the action buttons and raise slider.
+It isn't told its opponents' level and gets no stats or HUD (Winamax bans HUD software), so it has to play well against whoever it meets.
+`ai/checkpoints/best.pt` is that single model.
 You can still train or evaluate against one level with `--opponents easy` or `--opponents hard`.
 
-Models trained before levels existed (105 inputs) load fine: the new level inputs start with zero weight, so they play exactly as before and learn to use them with `--resume`.
+(Checkpoints saved while the model briefly had opponent-level inputs, with 109 inputs instead of 105, load automatically without them.)
 
 **Rewards:** chips won or lost each hand (as a share of all chips in play), +1 for winning the Expresso, and −0.5 for not winning.
 

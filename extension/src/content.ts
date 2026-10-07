@@ -77,7 +77,6 @@ function readTable(): Observation | null {
       allIn: d.allin === "true",
       dealer: d.dealer === "true",
       lastAction: d.lastAction || "",
-      level: d.botLevel || "",
     };
   };
   const cards = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)].map((e) => e.dataset.card!);

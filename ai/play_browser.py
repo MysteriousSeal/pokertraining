@@ -30,7 +30,7 @@ READ_TABLE = """() => {
     return {
       stack: Number(d.stack), bet: Number(d.bet), out: d.out === 'true',
       folded: d.folded === 'true', allIn: d.allin === 'true', dealer: d.dealer === 'true',
-      lastAction: d.lastAction || '', level: d.botLevel || '',
+      lastAction: d.lastAction || '',
     };
   };
   const cards = (sel) => [...document.querySelectorAll(sel)].map((e) => e.dataset.card);

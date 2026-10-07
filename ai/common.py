@@ -16,8 +16,10 @@ ROOT = Path(__file__).resolve().parent.parent
 CHECKPOINTS = ROOT / "ai" / "checkpoints"
 ACTIONS = ["fold", "check/call", "raise min", "raise ½ pot", "raise pot", "all-in"]
 OPPONENTS = ["mix", "easy", "hard"]
-# Number of network inputs (ai/agent.ts featurize). Older checkpoints with fewer are extended on load.
-OBS_DIM = 109
+# Number of network inputs (ai/agent.ts featurize): only what a real Winamax table shows.
+OBS_DIM = 105
+# Checkpoints saved while the model briefly saw opponent levels: 105 + 4 level inputs (dropped on load).
+LEVELS_DIM = 109
 
 
 class GameServer:
@@ -165,16 +167,16 @@ def save(policy: Policy, path: Path, **meta) -> None:
 
 
 def load(path: Path) -> Policy:
-    """Load a checkpoint. Models saved before newer inputs were added (e.g. opponent
-    levels) get zero weights for those inputs, so they play exactly as before and
-    can learn to use them with further training."""
+    """Load a checkpoint. Checkpoints from the short-lived version that saw opponent
+    levels (109 inputs) have those 4 trailing inputs dropped."""
     ckpt = torch.load(path, map_location="cpu")
     state = ckpt["state_dict"]
     old_dim = ckpt["obs_dim"]
-    if old_dim < OBS_DIM:
-        w = state["body.0.weight"]
-        state["body.0.weight"] = torch.cat([w, torch.zeros(w.shape[0], OBS_DIM - old_dim)], dim=1)
-    policy = Policy(max(old_dim, OBS_DIM), len(ACTIONS))
+    if old_dim == LEVELS_DIM:
+        state["body.0.weight"] = state["body.0.weight"][:, :OBS_DIM].clone()
+    elif old_dim != OBS_DIM:
+        raise ValueError(f"{path} expects {old_dim} inputs; this version uses {OBS_DIM}")
+    policy = Policy(OBS_DIM, len(ACTIONS))
     policy.load_state_dict(state)
     policy.eval()
     return policy

@@ -26,8 +26,6 @@ export interface SeatObs {
   dealer: boolean;
   /** "", "SB", "BB", "Check", "Call", "Bet", "Raise", "All-in", "Fold" */
   lastAction: string;
-  /** Bot level shown on the seat: "easy", "hard", or "" (the hero, or unknown). */
-  level: string;
 }
 
 export interface Observation {
@@ -100,7 +98,6 @@ export function observe(s: GameState, heroId: number): Observation {
       allIn: !p.out && p.allIn,
       dealer: s.dealer === p.id,
       lastAction: p.out ? "" : (p.lastAction ?? ""),
-      level: p.botLevel ?? "",
     };
   };
   return {
@@ -231,10 +228,6 @@ export function featurize(obs: Observation, equityIterations = EQUITY_ITERATIONS
     ...oneHot(LAST_ACTIONS.length, lastActionIndex(hero.lastAction)),
     ...oneHot(LAST_ACTIONS.length, lastActionIndex(left.lastAction)),
     ...oneHot(LAST_ACTIONS.length, lastActionIndex(right.lastAction)),
-    // Opponent levels last, so models trained before they existed can be extended (ai/common.py).
-    left.level === "easy" ? 1 : 0,
-    left.level === "hard" ? 1 : 0,
-    right.level === "easy" ? 1 : 0,
-    right.level === "hard" ? 1 : 0,
+    // Only what a real Winamax table shows: no opponent level, no stats/HUD.
   ];
 }
