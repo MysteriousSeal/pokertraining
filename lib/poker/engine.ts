@@ -15,8 +15,15 @@ export type Phase = "betting" | "streetEnd" | "runout" | "handOver" | "gameOver"
 
 export type ActionType = "fold" | "check" | "call" | "raise";
 
-/** Strength of a computer player: "easy" (lib/poker/bot.ts) or "hard" (lib/poker/botHard.ts). */
-export type BotLevel = "easy" | "hard";
+/** Strength of a computer player, 1 (total beginner) to 100 (strongest bot). See lib/poker/bot.ts. */
+export type BotLevel = number;
+
+/**
+ * A bot's personality: the kind of mistakes it leans toward. Strong at low levels,
+ * fading to nothing by level 100.
+ */
+export type BotStyle = "station" | "maniac" | "nit" | "fish";
+export const BOT_STYLES: BotStyle[] = ["station", "maniac", "nit", "fish"];
 
 /** One action in the current hand, for opponents to read (what a player at the table sees). */
 export interface HandAction {
@@ -67,6 +74,7 @@ export interface Player {
   place: number | null;
   /** null for the human / AI seat. */
   botLevel: BotLevel | null;
+  botStyle: BotStyle | null;
   stats: PlayerStats;
 }
 
@@ -167,11 +175,17 @@ function log(s: GameState, line: string) {
 
 export interface GameOptions {
   heroIndex?: number;
-  /** Bot level per seat (the hero's entry is ignored). Defaults to "easy". */
+  /** Bot level per seat, 1–100 (the hero's entry is ignored). Defaults to 50. */
   botLevels?: (BotLevel | null)[];
+  /** Personality per seat; random when omitted. */
+  botStyles?: (BotStyle | null)[];
 }
 
-export function createGame(names: string[], startingStack: number, { heroIndex = 0, botLevels = [] }: GameOptions = {}): GameState {
+export function createGame(
+  names: string[],
+  startingStack: number,
+  { heroIndex = 0, botLevels = [], botStyles = [] }: GameOptions = {},
+): GameState {
   const players: Player[] = names.map((name, id) => ({
     id,
     name,
@@ -188,7 +202,8 @@ export function createGame(names: string[], startingStack: number, { heroIndex =
     raiseLocked: false,
     lastAction: null,
     place: null,
-    botLevel: id === heroIndex ? null : (botLevels[id] ?? "easy"),
+    botLevel: id === heroIndex ? null : Math.min(100, Math.max(1, Math.round(botLevels[id] ?? 50))),
+    botStyle: id === heroIndex ? null : (botStyles[id] ?? BOT_STYLES[randomInt(BOT_STYLES.length)]),
     stats: { hands: 0, vpip: 0, raises: 0, shoves: 0 },
   }));
   return {

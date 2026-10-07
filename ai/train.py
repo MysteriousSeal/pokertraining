@@ -4,8 +4,9 @@
     ai/.venv/bin/python ai/train.py --resume --minutes 60   # continue from latest.pt
     add -v for losses, learning rate, finishing places and game length
 
-One model for every bot level: by default each game seats a random mix of easy and
-hard bots (--opponents mix), and the model sees each opponent's level on the table.
+One model for every bot level: by default each bot gets a random level from 1 to 100
+every game (--levels 1-100). The model is never told the level: it only sees what a
+real Winamax table shows.
 Checkpoints: ai/checkpoints/latest.pt and best.pt. When best.pt was trained against
 other opponents, it is kept as best-<opponents>.pt before being replaced.
 
@@ -25,7 +26,7 @@ import torch
 
 from pathlib import Path
 
-from common import ACTIONS, CHECKPOINTS, OPPONENTS, Policy, Pool, Status, checkpoint_opponents, fmt_duration, load, save
+from common import ACTIONS, CHECKPOINTS, Policy, Pool, Status, checkpoint_opponents, fmt_duration, load, parse_levels, save
 
 SHORT = ["fold", "call", "min", "half", "pot", "jam"]
 
@@ -44,23 +45,25 @@ def main() -> None:
     ap.add_argument("--minibatch", type=int, default=2048)
     ap.add_argument("--clip", type=float, default=0.2)
     ap.add_argument("--ent", type=float, default=0.02, help="initial entropy bonus (decays to 10%%)")
-    ap.add_argument("--opponents", choices=OPPONENTS, default="mix", help="bots to train against (mix = random easy/hard each game)")
+    ap.add_argument("--levels", default="1-100", help="bot level range, random per bot per game: 1-100 (default), 60-100, or 75")
     ap.add_argument("--resume", action="store_true", help="continue from ai/checkpoints/latest.pt")
     ap.add_argument("--init", type=Path, help="start from this checkpoint's weights (e.g. ai/checkpoints/best.pt)")
     ap.add_argument("-v", "--verbose", action="store_true", help="print extra training details each update")
     args = ap.parse_args()
 
     out = Status()
+    levels = parse_levels(args.levels)
+    opponents = f"levels {levels[0]}-{levels[1]}"
     torch.set_num_threads(args.threads)
     n_envs = args.workers * args.envs
     T = args.steps
 
     latest = CHECKPOINTS / "latest.pt"
     best_path = CHECKPOINTS / "best.pt"
-    out.line(f"Opponents: {args.opponents} bots · checkpoints in {CHECKPOINTS}")
+    out.line(f"Opponents: bots at random {opponents} · checkpoints in {CHECKPOINTS}")
     out.line(f"Starting {args.workers} game servers × {args.envs} games = {n_envs} tables…")
     t_boot = time.time()
-    pool = Pool(args.workers, args.envs, args.opponents)
+    pool = Pool(args.workers, args.envs, levels)
     obs_dim = pool.x.shape[1]
     out.line(f"  ready in {time.time() - t_boot:.1f}s · {obs_dim} inputs · {len(ACTIONS)} actions · {T * n_envs:,} decisions per update")
 
@@ -84,11 +87,11 @@ def main() -> None:
     best_archive = None
     if best_path.exists():
         trained_vs = checkpoint_opponents(best_path)
-        if trained_vs == args.opponents:
+        if trained_vs == opponents:
             best = torch.load(best_path, map_location="cpu")["meta"].get("win", 0.0)
-            out.line(f"  best so far vs {args.opponents} bots: {best * 100:.1f}% ({best_path})")
+            out.line(f"  best so far vs bots at {opponents}: {best * 100:.1f}% ({best_path})")
         else:
-            best_archive = CHECKPOINTS / f"best-{trained_vs}.pt"
+            best_archive = CHECKPOINTS / f"best-{trained_vs.replace(' ', '-')}.pt"
             out.line(f"  {best_path.name} was trained vs {trained_vs} bots: it will be kept as {best_archive.name} when a new best replaces it")
     policy.train()
     opt = torch.optim.Adam(policy.parameters(), lr=args.lr, eps=1e-5)
@@ -111,7 +114,7 @@ def main() -> None:
     start = time.time()
 
     def checkpoint() -> None:
-        save(policy, latest, games=games_before + games, win=win, opponents=args.opponents)
+        save(policy, latest, games=games_before + games, win=win, opponents=opponents)
 
     try:
         while time.time() - start < budget:
@@ -229,7 +232,7 @@ def main() -> None:
                     best_path.rename(best_archive)
                     out.line(f"  kept the previous best model as {best_archive}")
                 best_archive = None
-                save(policy, best_path, games=games_before + games, win=win, opponents=args.opponents)
+                save(policy, best_path, games=games_before + games, win=win, opponents=opponents)
                 out.line(f"  ★ new best {win * 100:.1f}% over the last {len(places):,} games → saved {best_path}")
     except KeyboardInterrupt:
         out.line("\nStopped by Ctrl+C")

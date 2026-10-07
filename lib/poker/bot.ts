@@ -1,7 +1,8 @@
 import { type Card, fullDeck, randomInt } from "./cards";
 import { evaluateScore } from "./evaluator";
 import { type Action, type GameState, legalActions, potTotal } from "./engine";
-import { decideHardBotAction } from "./botHard";
+import { decideExpertAction } from "./botExpert";
+import { randomAction, styleAction } from "./botStyles";
 
 /** Chen formula: quick preflop hand strength, roughly -1 (72o) to 20 (AA). */
 export function chenScore([a, b]: Card[]): number {
@@ -62,12 +63,34 @@ export function estimateEquity(hole: Card[], board: Card[], opponents: number, i
 
 const chance = (p: number) => randomInt(10_000) < p * 10_000;
 
-/** Acts for the bot whose turn it is, at that seat's level. */
-export function decideBotAction(s: GameState): Action {
-  return s.players[s.toAct!].botLevel === "hard" ? decideHardBotAction(s) : decideEasyBotAction(s);
+/**
+ * How a bot of a given level (1–100) plays. Each decision is one of:
+ *   a blunder (any legal move)        30% at level 1 → 8% at 50 → 0% at 100
+ *   its personality's move            70% at level 1 → 37% at 50 → 0% at 100
+ *   the expert move at skill 0–1      0% at level 1 → 55% at 50 → 100% at 100
+ * and the expert itself gets sharper with skill (lib/poker/botExpert.ts).
+ */
+export function levelMix(level: number) {
+  const skill = (Math.min(100, Math.max(1, level)) - 1) / 99;
+  const blunder = 0.3 * (1 - skill) ** 2;
+  const personality = Math.min(1 - blunder, 0.85 * (1 - skill) ** 1.2);
+  return { skill, blunder, personality, expert: 1 - blunder - personality };
 }
 
-/** "Easy" bot: Chen-formula preflop, equity vs random hands postflop, no memory. */
+/** Acts for the bot whose turn it is, at that seat's level and personality. */
+export function decideBotAction(s: GameState): Action {
+  const me = s.players[s.toAct!];
+  const { skill, blunder, personality } = levelMix(me.botLevel ?? 50);
+  const r = Math.random();
+  if (r < blunder) return randomAction(s);
+  if (r < blunder + personality) {
+    const style = me.botStyle ?? "fish";
+    return style === "fish" ? decideEasyBotAction(s) : styleAction(s, style);
+  }
+  return decideExpertAction(s, skill);
+}
+
+/** "Fish" personality (the original easy bot): Chen-formula preflop, equity vs random hands postflop, no memory. */
 export function decideEasyBotAction(s: GameState): Action {
   const legal = legalActions(s)!;
   const me = s.players[s.toAct!];

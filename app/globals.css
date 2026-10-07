@@ -274,6 +274,82 @@ button:disabled {
   margin-top: 8px;
   font-size: 12px;
 }
+.level-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 620px;
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.level-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.level-head .muted {
+  margin-left: auto;
+}
+.level-picker.is-random input[type="range"] {
+  opacity: 0.3;
+}
+.random-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+.random-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.random-toggle .switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 99px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  transition: background 0.15s;
+}
+.random-toggle .switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.random-toggle input:checked + .switch {
+  background: var(--red);
+  border-color: var(--red);
+}
+.random-toggle input:checked + .switch::after {
+  transform: translateX(14px);
+}
+.random-toggle input:focus-visible + .switch {
+  outline: 2px solid var(--red-2);
+  outline-offset: 2px;
+}
+.level-picker input {
+  width: 100%;
+  accent-color: var(--red);
+}
+.level-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
 .formats {
   display: flex;
   gap: 10px;

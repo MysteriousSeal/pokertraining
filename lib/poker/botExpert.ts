@@ -1,5 +1,6 @@
 /**
- * "Hard" bot.
+ * The "expert" brain behind every bot level, with a skill dial from 0 to 1
+ * (lib/poker/bot.ts maps levels 1–100 onto it and mixes in mistakes and personalities).
  *
  * Preflop, short-stacked: shoves from equilibrium push/fold charts (heads-up
  * charts solved by scripts/gen-pushfold.ts, tightened on the button 3-handed).
@@ -8,6 +9,10 @@
  * a very wide shoving range), then calls only when its equity against that range
  * beats the price. Postflop it narrows ranges further from betting (bets usually
  * mean a made hand or a draw) and value-bets, bluffs and folds accordingly.
+ *
+ * Skill controls how often it reads ranges (vs. assuming a random hand), how much it
+ * adapts to habits, how precise and how noisy its equity estimates are, and the
+ * advanced plays: semi-bluffs, slow-plays, thin river value bets, light 3-bet shoves.
  */
 import type { Card } from "./cards";
 import { type Action, type GameState, type Player, legalActions, potTotal } from "./engine";
@@ -60,8 +65,11 @@ const onButton3Handed = (s: GameState, p: Player) => alivePlayers(s).length === 
 
 /* ------------------------------------------------------------- range reading */
 
-/** What `v` is likely to hold given their preflop actions this hand and their habits so far. */
-export function estimateRange(s: GameState, v: Player): Range {
+/**
+ * What `v` is likely to hold given their preflop actions this hand and, scaled by
+ * `adapt` (0–1), their habits so far.
+ */
+export function estimateRange(s: GameState, v: Player, adapt = 1): Range {
   const preflop = s.history.filter((h) => h.street === "preflop");
   const mine = preflop.filter((h) => h.player === v.id);
   const lastRaise = [...mine].reverse().find((h) => h.type === "raise");
@@ -79,9 +87,10 @@ export function estimateRange(s: GameState, v: Player): Range {
         ? chartRange(PUSH, stackBB, onButton3Handed(s, v) ? BUTTON_FACTOR : 1)
         : chartRange(CALL, stackBB, 1); // re-shove: roughly a calling range
       // Someone who shoves far more often than the chart has a wider range.
-      share = Math.max(rangeSize(chart), shoveRate * 1.1);
+      const base = rangeSize(chart);
+      share = base + adapt * Math.max(0, shoveRate * 1.1 - base);
     } else if (firstRaise) {
-      share = Math.max(0.35, raiseRate * 1.1);
+      share = 0.35 + adapt * Math.max(0, raiseRate * 1.1 - 0.35);
     } else {
       share = 0.12; // a re-raise that isn't all-in
     }
@@ -120,9 +129,32 @@ function postflopFilter(s: GameState, villains: Player[]): ComboFilter {
   };
 }
 
+/** Flush draw or open-ended straight draw that uses at least one hole card. */
+function hasDraw(hole: Card[], board: Card[]): boolean {
+  if (board.length < 3 || board.length > 4) return false;
+  const all = [...hole, ...board];
+  for (const suit of ["s", "h", "d", "c"]) {
+    if (all.filter((c) => c.suit === suit).length === 4 && hole.some((c) => c.suit === suit)) return true;
+  }
+  const mask = (cards: Card[]) => cards.reduce((m, c) => m | (1 << c.rank) | (c.rank === 14 ? 2 : 0), 0);
+  const full = mask(all);
+  const boardOnly = mask(board);
+  // Four in a row with a free rank at both ends (3-4-5-6 … T-J-Q-K), not already all on the board.
+  for (let lo = 3; lo <= 10; lo++) {
+    const run = 0b1111 << lo;
+    if ((full & run) === run && (boardOnly & run) !== run) return true;
+  }
+  return false;
+}
+
+function gaussian() {
+  return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
+}
+
 /* ------------------------------------------------------------------ deciding */
 
-export function decideHardBotAction(s: GameState): Action {
+/** Best play at a given skill (0 = weakest expert, 1 = strongest bot). */
+export function decideExpertAction(s: GameState, skill = 1): Action {
   const legal = legalActions(s)!;
   const me = s.players[s.toAct!];
   const bb = s.blinds.bb;
@@ -131,6 +163,13 @@ export function decideHardBotAction(s: GameState): Action {
   const effBB = Math.min(me.stack + me.bet, maxVillainStack) / bb;
   const pot = potTotal(s);
   const cls = handClass(me.hole);
+
+  // Skill: range reading vs. "they could have anything", habit-adaptation, precision, misjudgement.
+  const readsRanges = chance(0.2 + 0.8 * skill);
+  const adapt = Math.min(1, Math.max(0, (skill - 0.3) / 0.7));
+  const iterations = Math.round(120 + 180 * skill);
+  const ranges = () => villains.map((v) => (readsRanges ? estimateRange(s, v, adapt) : topRange(1)));
+  const judge = (equity: number) => Math.min(1, Math.max(0, equity + gaussian() * 0.08 * (1 - skill)));
 
   const allIn: Action = { type: "raise", amount: legal.maxRaiseTo };
   const call: Action = legal.canCall ? { type: "call" } : { type: "check" };
@@ -166,7 +205,7 @@ export function decideHardBotAction(s: GameState): Action {
     }
 
     // Facing a raise or a shove: equity against what they're likely to hold.
-    const equity = equityVsRanges(me.hole, [], villains.map((v) => estimateRange(s, v)), 300);
+    const equity = judge(equityVsRanges(me.hole, [], ranges(), iterations));
     const required = legal.toCall / (pot + legal.toCall);
     const stillToAct = s.players.filter((p) => p.id !== me.id && !p.out && !p.folded && !p.allIn && !p.hasActed).length;
     const margin = stillToAct ? 0.04 : 0.01;
@@ -178,22 +217,27 @@ export function decideHardBotAction(s: GameState): Action {
     }
     if (legal.canRaise && equity >= 0.6) return effBB <= 25 ? allIn : raiseTo(s.currentBet * 3);
     if (legal.canRaise && effBB <= 25 && equity >= 0.52 && chance(0.4)) return allIn;
+    // Light 3-bet shove with blocker hands (aces/kings that aren't strong enough to call), top skill only.
+    const blocker = me.hole.some((c) => c.rank >= 13) && !inTop(cls, 0.15) && inTop(cls, 0.45);
+    if (legal.canRaise && effBB <= 25 && blocker && chance(0.3 * skill * skill)) return allIn;
     return equity >= required + 0.06 ? call : passive;
   }
 
   // Postflop
-  const equity = equityVsRanges(
-    me.hole,
-    s.board,
-    villains.map((v) => estimateRange(s, v)),
-    250,
-    postflopFilter(s, villains),
-  );
+  const equity = judge(equityVsRanges(me.hole, s.board, ranges(), iterations, readsRanges ? postflopFilter(s, villains) : undefined));
   const spr = me.stack / Math.max(pot, 1);
   const headsUp = villains.length === 1;
+  const draw = hasDraw(me.hole, s.board);
+  const expert = skill * skill; // advanced plays only show up near the top
 
   if (legal.canCheck) {
+    // Slow-play a monster on the flop now and then, to let opponents catch up.
+    if (equity >= 0.88 && s.street === "flop" && spr > 2 && chance(0.25 * expert)) return { type: "check" };
     if (equity >= 0.65) return spr < 1.5 ? allIn : raiseTo(pot * (equity > 0.8 ? 0.75 : 0.6));
+    // Semi-bluff draws: win now, or improve.
+    if (draw && s.street !== "river" && chance(0.5 * expert)) return spr < 1.5 ? allIn : raiseTo(pot * 0.55);
+    // Thin value on the river against one player.
+    if (s.street === "river" && headsUp && equity >= 0.58 && chance(expert)) return raiseTo(pot * 0.4);
     if (s.street === "flop" && s.preflopAggressor === me.id && headsUp && chance(0.55)) return raiseTo(pot * 0.33);
     if (s.street === "river" && headsUp && equity < 0.2 && chance(0.3)) return raiseTo(pot * 0.75);
     return { type: "check" };
@@ -201,6 +245,8 @@ export function decideHardBotAction(s: GameState): Action {
   const potOdds = legal.toCall / (pot + legal.toCall);
   if (equity >= 0.78 && legal.canRaise) return spr < 2 ? allIn : raiseTo(s.currentBet * 3);
   if (equity >= potOdds + 0.02) return call;
+  // Drawing hands can call a little lighter when stacks behind make hitting pay off.
+  if (draw && s.street !== "river" && spr > 2 && equity >= potOdds - 0.06 * expert) return call;
   if (legal.canRaise && headsUp && s.street !== "river" && chance(0.05)) return raiseTo(s.currentBet * 3);
   return { type: "fold" };
 }

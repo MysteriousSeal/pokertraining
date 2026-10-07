@@ -15,7 +15,15 @@ from torch import nn
 ROOT = Path(__file__).resolve().parent.parent
 CHECKPOINTS = ROOT / "ai" / "checkpoints"
 ACTIONS = ["fold", "check/call", "raise min", "raise ½ pot", "raise pot", "all-in"]
-OPPONENTS = ["mix", "easy", "hard"]
+
+
+def parse_levels(text: str) -> tuple[int, int]:
+    """Bot level range: "1-100", "60-100", or a single level "75"."""
+    lo, _, hi = text.partition("-")
+    lo_i, hi_i = int(lo), int(hi or lo)
+    if not 1 <= lo_i <= hi_i <= 100:
+        raise ValueError(f"bad level range {text!r}: use e.g. 1-100, 60-100 or 75")
+    return lo_i, hi_i
 # Number of network inputs (ai/agent.ts featurize): only what a real Winamax table shows.
 OBS_DIM = 105
 # Checkpoints saved while the model briefly saw opponent levels: 105 + 4 level inputs (dropped on load).
@@ -61,12 +69,12 @@ class GameServer:
 class Pool:
     """Several game servers stepped in parallel, exposed as one batch."""
 
-    def __init__(self, workers: int, envs_per_worker: int, opponents: str = "easy") -> None:
+    def __init__(self, workers: int, envs_per_worker: int, levels: tuple[int, int] = (1, 100)) -> None:
         self.servers = [GameServer() for _ in range(workers)]
         self.n = envs_per_worker
         self.server_time = 0.0  # seconds spent waiting on game servers
         for s in self.servers:
-            s.send({"cmd": "init", "n": envs_per_worker, "opponents": opponents})
+            s.send({"cmd": "init", "n": envs_per_worker, "levels": list(levels)})
         replies = [s.recv() for s in self.servers]
         self.x, self.mask = self._stack(replies)
 
@@ -183,5 +191,5 @@ def load(path: Path) -> Policy:
 
 
 def checkpoint_opponents(path: Path) -> str:
-    """Which bots a checkpoint was trained against (models from before bot levels: easy)."""
+    """Which bots a checkpoint was trained against, e.g. "levels 1-100" (older models: "easy" or "mix")."""
     return torch.load(path, map_location="cpu").get("meta", {}).get("opponents", "easy")

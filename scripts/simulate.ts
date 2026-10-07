@@ -28,7 +28,7 @@ const TOTAL = 1500;
 let hands = 0;
 const wins = [0, 0, 0];
 for (let g = 0; g < games; g++) {
-  let s: GameState = createGame(["A", "B", "C"], 500, { heroIndex: -1, botLevels: [g % 2 ? "hard" : "easy", "hard", g % 3 ? "easy" : "hard"] });
+  let s: GameState = createGame(["A", "B", "C"], 500, { heroIndex: -1, botLevels: [1 + (g * 37) % 100, 1 + (g * 61) % 100, 1 + (g * 13) % 100] });
   let level = 0;
   let guard = 0;
   while (s.phase !== "gameOver") {

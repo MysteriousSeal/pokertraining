@@ -1,6 +1,6 @@
 """Measure a checkpoint's win rate in the simulator.
 
-    ai/.venv/bin/python ai/eval.py --games 20000 [--opponents easy|hard|mix] [--checkpoint PATH] [--sample] [-v]
+    ai/.venv/bin/python ai/eval.py --games 20000 [--levels 1-100 | 60-100 | 75] [--checkpoint PATH] [--sample] [-v]
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from common import ACTIONS, CHECKPOINTS, OPPONENTS, Pool, Status, fmt_duration, load
+from common import ACTIONS, CHECKPOINTS, Pool, Status, fmt_duration, load, parse_levels
 
 
 def summary(places: list[int]) -> str:
@@ -28,7 +28,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--checkpoint", type=Path, default=CHECKPOINTS / "best.pt")
     ap.add_argument("--games", type=int, default=20000)
-    ap.add_argument("--opponents", choices=OPPONENTS, default="mix", help="bots to play against (mix = random easy/hard each game)")
+    ap.add_argument("--levels", default="1-100", help="bot level range, random per bot per game: 1-100 (default), 60-100, or 75")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--envs", type=int, default=48)
     ap.add_argument("--sample", action="store_true", help="sample actions instead of taking the most likely one")
@@ -36,17 +36,19 @@ def main() -> None:
     args = ap.parse_args()
 
     out = Status()
+    levels = parse_levels(args.levels)
+    opponents = f"bots at level {levels[0]}" if levels[0] == levels[1] else f"bots at random levels {levels[0]}-{levels[1]}"
     meta = torch.load(args.checkpoint, map_location="cpu").get("meta", {})
     out.line(
         f"Evaluating {args.checkpoint} (trained on {meta.get('games', 0):,} games, "
         f"training win rate {meta.get('win', 0) * 100:.1f}%)"
     )
-    out.line(f"  policy: {'sampled' if args.sample else 'greedy (most likely action)'} · {args.games:,} games vs {args.opponents} bots")
+    out.line(f"  policy: {'sampled' if args.sample else 'greedy (most likely action)'} · {args.games:,} games vs {opponents}")
     policy = load(args.checkpoint)
 
     t_boot = time.time()
     out.line(f"Starting {args.workers} game servers × {args.envs} tables…")
-    pool = Pool(args.workers, args.envs, args.opponents)
+    pool = Pool(args.workers, args.envs, levels)
     out.line(f"  ready in {time.time() - t_boot:.1f}s\n")
 
     places: list[int] = []
@@ -81,7 +83,7 @@ def main() -> None:
     places = places[: args.games]
     if not places:
         return
-    out.line(f"\n{args.checkpoint} vs {args.opponents} bots: {len(places):,} games in {fmt_duration(time.time() - start)}")
+    out.line(f"\n{args.checkpoint} vs {opponents}: {len(places):,} games in {fmt_duration(time.time() - start)}")
     out.line(f"  {summary(places)}")
     if args.verbose:
         mix = action_counts / action_counts.sum() * 100

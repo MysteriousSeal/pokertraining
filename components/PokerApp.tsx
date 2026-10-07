@@ -15,7 +15,7 @@ import {
   type FormatId,
   type MultiplierTier,
 } from "@/lib/poker/expresso";
-import { randomInt, shuffle } from "@/lib/poker/cards";
+import { randomInt } from "@/lib/poker/cards";
 import { randomNames } from "@/lib/poker/names";
 import { MultiplierWheel } from "./MultiplierWheel";
 import { PokerTable } from "./PokerTable";
@@ -23,12 +23,16 @@ import { PokerTable } from "./PokerTable";
 
 const STORAGE_KEY = "expresso-trainer:v1";
 
-type Opponents = BotLevel | "mixed";
-const OPPONENTS: { id: Opponents; name: string; detail: string }[] = [
-  { id: "easy", name: "Easy bots", detail: "Simple rules, no memory" },
-  { id: "hard", name: "Hard bots", detail: "Push/fold charts, read ranges" },
-  { id: "mixed", name: "Mixed", detail: "One easy, one hard" },
-];
+/** How opponents of each level play, in words. */
+function levelLabel(level: number): string {
+  if (level <= 15) return "Total beginner";
+  if (level <= 35) return "Recreational";
+  if (level <= 55) return "Casual regular";
+  if (level <= 75) return "Solid regular";
+  if (level <= 90) return "Strong";
+  if (level <= 99) return "Expert";
+  return "Strongest bot";
+}
 const START_BANKROLL = 1000;
 
 interface Stats {
@@ -78,7 +82,9 @@ export function PokerApp() {
   const [screen, setScreen] = useState<Screen>({ kind: "lobby" });
   const [buyIn, setBuyIn] = useState(1);
   const [formatId, setFormatId] = useState<FormatId>("expresso");
-  const [opponents, setOpponents] = useState<Opponents>("easy");
+  const [botLevel, setBotLevel] = useState(50);
+  // Random: each bot gets its own hidden level 1–100 every game, like AI training.
+  const [randomLevels, setRandomLevels] = useState(false);
 
   useEffect(() => {
     // localStorage only exists in the browser, so load after mount.
@@ -103,8 +109,8 @@ export function PokerApp() {
     const tier = drawMultiplier(amount);
     const hero = stats.heroName || "You";
     const names = [hero, ...randomNames(2, [hero])];
-    const levels: BotLevel[] = opponents === "mixed" ? shuffle<BotLevel>(["easy", "hard"]) : [opponents, opponents];
-    const botLevels = [null, ...levels];
+    const level = () => (randomLevels ? 1 + randomInt(100) : botLevel);
+    const botLevels: (BotLevel | null)[] = [null, level(), level()];
     setScreen({ kind: "wheel", format, buyIn: amount, tier, reel: buildReel(amount, tier.multiplier), names, botLevels });
   };
 
@@ -215,21 +221,30 @@ export function PokerApp() {
           for a {formatMoney(buyIn)} buy-in.
         </p>
 
-        <div className="formats" role="radiogroup" aria-label="Opponents">
-          {OPPONENTS.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              role="radio"
-              aria-checked={opponents === o.id}
-              data-opponents={o.id}
-              className={`format ${opponents === o.id ? "on" : ""}`}
-              onClick={() => setOpponents(o.id)}
-            >
-              <span className="format-name">{o.name}</span>
-              <span className="muted">{o.detail}</span>
-            </button>
-          ))}
+        <div className={`level-picker ${randomLevels ? "is-random" : ""}`}>
+          <span className="level-head">
+            <span className="format-name">{randomLevels ? "Opponents · random levels" : `Opponents · level ${botLevel}`}</span>
+            <span className="muted">{randomLevels ? "Each bot 1–100, hidden" : levelLabel(botLevel)}</span>
+            <label className="random-toggle">
+              <input id="random-levels" type="checkbox" checked={randomLevels} onChange={(e) => setRandomLevels(e.target.checked)} />
+              <span className="switch" aria-hidden />
+              Random
+            </label>
+          </span>
+          <input
+            id="bot-level"
+            type="range"
+            min={1}
+            max={100}
+            value={botLevel}
+            disabled={randomLevels}
+            onChange={(e) => setBotLevel(Number(e.target.value))}
+            aria-label="Opponent level"
+          />
+          <span className="level-scale muted">
+            <span>1 · total beginner</span>
+            <span>100 · strongest bot</span>
+          </span>
         </div>
 
         <div className="formats" role="radiogroup" aria-label="Format">
