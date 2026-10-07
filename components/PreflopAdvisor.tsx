@@ -7,18 +7,29 @@ import { RANKS as RANK_ORDER, SUITS, SUIT_SYMBOL, cardKey, rankLabel, type Card,
 import { advance, applyAction, createGame, legalActions, potTotal, startHand, type GameState } from "@/lib/poker/engine";
 
 type Seat = "btn" | "sb" | "bb";
+type Players = 2 | 3;
 type MoveKind = "fold" | "call" | "raise" | "allin";
 
-const SEATS: { id: Seat; name: string; spot: string }[] = [
-  { id: "btn", name: "Button", spot: "No blind, first to act" },
-  { id: "sb", name: "Small blind", spot: "Acts second preflop" },
-  { id: "bb", name: "Big blind", spot: "Acts last preflop" },
-];
+const SEATS: Record<Players, { id: Seat; name: string; spot: string }[]> = {
+  3: [
+    { id: "btn", name: "Button", spot: "No blind, first to act" },
+    { id: "sb", name: "Small blind", spot: "Acts second preflop" },
+    { id: "bb", name: "Big blind", spot: "Acts last preflop" },
+  ],
+  2: [
+    { id: "btn", name: "Button", spot: "Posts the small blind, acts first" },
+    { id: "bb", name: "Big blind", spot: "Acts last preflop, first after" },
+  ],
+};
 /** Seat the hero is in on the following hand, once the button has moved one seat. */
-const NEXT_SEAT: Record<Seat, Seat> = { btn: "bb", bb: "sb", sb: "btn" };
+const NEXT_SEAT: Record<Players, Record<Seat, Seat>> = {
+  3: { btn: "bb", bb: "sb", sb: "btn" },
+  2: { btn: "bb", bb: "btn", sb: "bb" },
+};
 
 const HERO = 0;
-const STACK = 500;
+/** 25 BB each 3-handed; heads-up the two left share the table's 1,500 chips. */
+const STACK: Record<Players, number> = { 3: 500, 2: 750 };
 const BB = 20;
 
 interface LayerJson {
@@ -158,11 +169,15 @@ function sizeHint(index: number, action: ConcreteAction, advice: Advice): string
 
 /* ------------------------------------------------------------------- game */
 
-/** A fresh 3-handed hand, 25 BB each at 10/20, with the hero in the chosen seat. */
-function newHand(seat: Seat): GameState {
-  const game = createGame(["You", "Player 2", "Player 3"], STACK, { heroIndex: HERO });
-  // startHand moves the button one seat before dealing.
-  const dealer = seat === "btn" ? 2 : seat === "sb" ? 1 : 0;
+/** A fresh hand at 10/20 with the hero in the chosen seat. Heads-up, the third seat is already eliminated. */
+function newHand(seat: Seat, players: Players): GameState {
+  const game = createGame(["You", "Player 2", "Player 3"], STACK[players], { heroIndex: HERO });
+  if (players === 2) {
+    const gone = game.players[2];
+    Object.assign(gone, { out: true, folded: true, stack: 0, place: 3 });
+  }
+  // startHand moves the button one seat (skipping eliminated players) before dealing.
+  const dealer = players === 3 ? (seat === "btn" ? 2 : seat === "sb" ? 1 : 0) : seat === "bb" ? 0 : 1;
   return startHand({ ...game, dealer }, 0);
 }
 
@@ -173,7 +188,8 @@ function withHole(game: GameState, hole: Card[]): GameState {
 }
 
 function seatName(game: GameState, id: number): string {
-  return id === game.dealer ? "Button" : id === game.sbSeat ? "Small blind" : "Big blind";
+  if (id === game.dealer) return "Button";
+  return id === game.sbSeat ? "Small blind" : "Big blind";
 }
 
 const BOARD_NEEDED: Record<GameState["street"], number> = { preflop: 0, flop: 3, turn: 4, river: 5 };
@@ -191,7 +207,7 @@ function historyLines(game: GameState): string[] {
   return game.history.map((entry) => {
     const who = entry.player === HERO ? "You" : seatName(game, entry.player);
     const verb = entry.player === HERO ? { fold: "fold", check: "check", call: "call", bet: "bet", raise: "raise to" } : { fold: "folds", check: "checks", call: "calls", bet: "bets", raise: "raises to" };
-    const amount = entry.type === "fold" || entry.type === "check" ? "" : ` ${bbText(entry.to)}`;
+    const amount = entry.type === "fold" || entry.type === "check" ? "" : entry.type === "call" ? `, ${bbText(entry.to)} in` : ` ${bbText(entry.to)}`;
     return `${STREET_NAME[entry.street]} · ${who} ${entry.allIn ? (entry.player === HERO ? "go" : "goes") + " all-in for" : verb[entry.type]}${amount}`;
   });
 }
@@ -251,6 +267,7 @@ function BigCard({ card, size }: { card: Card; size?: "sm" }) {
 
 export function PreflopAdvisor() {
   const [seat, setSeat] = useState<Seat>("btn");
+  const [players, setPlayers] = useState<Players>(3);
   const [hole, setHole] = useState<Card[]>([]);
   const [handText, setHandText] = useState("");
   const [boardText, setBoardText] = useState("");
@@ -263,7 +280,7 @@ export function PreflopAdvisor() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setGame(newHand("btn")), 0);
+    const timer = setTimeout(() => setGame(newHand("btn", 3)), 0);
     return () => clearTimeout(timer);
   }, []);
 
@@ -279,7 +296,7 @@ export function PreflopAdvisor() {
 
   const live = useMemo(() => (game ? withHole(game, hole) : null), [game, hole]);
   if (!live || !game) return <main className="advisor-page"><p className="muted">Dealing…</p></main>;
-  return <Advisor {...{ live, game, setGame, hole, setHole, handText, setHandText, boardText, setBoardText, chosen, setChosen, raiseText, setRaiseText, played, setPlayed, model, error, seat, setSeat }} />;
+  return <Advisor {...{ live, game, setGame, hole, setHole, handText, setHandText, boardText, setBoardText, chosen, setChosen, raiseText, setRaiseText, played, setPlayed, model, error, seat, setSeat, players, setPlayers }} />;
 }
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
@@ -303,9 +320,11 @@ interface AdvisorProps {
   error: string | null;
   seat: Seat;
   setSeat: Setter<Seat>;
+  players: Players;
+  setPlayers: Setter<Players>;
 }
 
-function Advisor({ live, game, setGame, hole, setHole, handText, setHandText, boardText, setBoardText, chosen, setChosen, raiseText, setRaiseText, played, setPlayed, model, error, seat, setSeat }: AdvisorProps) {
+function Advisor({ live, game, setGame, hole, setHole, handText, setHandText, boardText, setBoardText, chosen, setChosen, raiseText, setRaiseText, played, setPlayed, model, error, seat, setSeat, players, setPlayers }: AdvisorProps) {
   const hero = live.players[HERO];
   const street = live.street;
   const preflop = street === "preflop";
@@ -341,9 +360,11 @@ function Advisor({ live, game, setGame, hole, setHole, handText, setHandText, bo
     );
   }, [game, heroTurn, model, preflop]);
 
-  const resetHand = (nextSeat: Seat) => {
-    setSeat(nextSeat);
-    setGame(newHand(nextSeat));
+  const resetHand = (nextSeat: Seat, nextPlayers: Players = players) => {
+    const fixedSeat = nextPlayers === 2 && nextSeat === "sb" ? "btn" : nextSeat;
+    setSeat(fixedSeat);
+    setPlayers(nextPlayers);
+    setGame(newHand(fixedSeat, nextPlayers));
     setBoardText("");
     setChosen(null);
     setRaiseText("");
@@ -423,7 +444,7 @@ function Advisor({ live, game, setGame, hole, setHole, handText, setHandText, bo
     setHole([]);
     setHandText("");
     setPlayed((count) => count + 1);
-    resetHand(NEXT_SEAT[seat]);
+    resetHand(NEXT_SEAT[players][seat]);
   };
 
   const selectedLabel = hole.length === 2 ? handLabel(hole[0], hole[1]) : hole.length === 1 ? "One more card" : "Pick two cards";
@@ -448,22 +469,31 @@ function Advisor({ live, game, setGame, hole, setHole, handText, setHandText, bo
         <Link href="/" className="ghost-btn">← Table</Link>
         <div className="advisor-title">
           <div className="brand-name">Hand Advisor</div>
-          <div className="muted">Play a real 3-handed hand. Report what the others do; the Expresso bot advises your every move.</div>
+          <div className="muted">Play a real hand, 3-handed or heads-up. Report what the others do; the Expresso bot advises your every move.</div>
         </div>
       </header>
 
       <div className="advisor-layout">
         <section className={`advisor-chart ${needsCards && preflop && !over ? "advisor-first" : ""} ${!preflop ? "advisor-board" : ""}`} aria-label="Table">
           <div className="advisor-board-head">
+            <div className="advisor-players" role="group" aria-label="Players at the table">
+              {([3, 2] as const).map((count) => (
+                <button type="button" key={count} className={players === count ? "on" : ""} aria-pressed={players === count} disabled={started} onClick={() => resetHand(seat, count)}>
+                  {count === 3 ? "3 players" : "Heads-up"}
+                </button>
+              ))}
+            </div>
+            {started && !over && <button type="button" className="ghost-btn" onClick={() => resetHand(seat)}>Start over</button>}
+          </div>
+          <div className="advisor-board-head">
             <div className="advisor-seat" role="group" aria-label="Your seat">
-              {SEATS.map((option) => (
+              {SEATS[players].map((option) => (
                 <button type="button" key={option.id} className={seat === option.id ? "on" : ""} aria-pressed={seat === option.id} disabled={started} onClick={() => resetHand(option.id)}>
                   <strong>{option.name}</strong>
                   <span>{option.spot}</span>
                 </button>
               ))}
             </div>
-            {started && !over && <button type="button" className="ghost-btn" onClick={() => resetHand(seat)}>Start over</button>}
           </div>
 
           {showHoleDeck && (
@@ -625,7 +655,7 @@ function Advisor({ live, game, setGame, hole, setHole, handText, setHandText, bo
                 <span className="advisor-stats">
                   <b>{(advice.probabilities[advice.best] * 100).toFixed(0)}%</b> confidence
                   <i aria-hidden="true">·</i>
-                  <b>{(advice.equity * 100).toFixed(0)}%</b> equity vs {live.players.filter((p) => p.id !== HERO && !p.folded).length === 2 ? "2 players" : "1 player"}
+                  <b>{(advice.equity * 100).toFixed(0)}%</b> equity vs {live.players.filter((p) => p.id !== HERO && !p.folded && !p.out).length === 2 ? "2 players" : "1 player"}
                 </span>
               </div>
               <ol className="advisor-probabilities" aria-label="All legal moves. Pick the one you played.">
@@ -654,7 +684,7 @@ function Advisor({ live, game, setGame, hole, setHole, handText, setHandText, bo
             <div className="advisor-next">
               <button type="button" className="primary-btn" onClick={nextHand}>Next hand</button>
               <span className="muted">
-                Clears the cards and moves the button: you will be the {SEATS.find((option) => option.id === NEXT_SEAT[seat])?.name.toLowerCase()}.
+                Clears the cards and moves the button: you will be the {SEATS[players].find((option) => option.id === NEXT_SEAT[players][seat])?.name.toLowerCase()}.
                 {played > 0 && <small>{played} {played === 1 ? "hand" : "hands"} played</small>}
               </span>
             </div>
@@ -687,7 +717,7 @@ function Advisor({ live, game, setGame, hole, setHole, handText, setHandText, bo
 
           {model && (
             <p className="muted advisor-model">
-              10/20 blinds, 25 BB stacks, 3 players. Model {model.checkpoint}, {model.games.toLocaleString("en-GB")} training games.
+              10/20 blinds, {players === 3 ? "25 BB stacks, 3 players" : "37.5 BB stacks, heads-up"}. Model {model.checkpoint}, {model.games.toLocaleString("en-GB")} training games.
             </p>
           )}
         </section>

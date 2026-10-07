@@ -423,6 +423,25 @@ button:disabled {
 .advisor-ask-raise button { border-width: 0 0 0 1px; border-radius: 0 7px 7px 0; }
 .advisor-ask > small.muted { font-size: 12px; letter-spacing: 0; text-transform: none; }
 .advisor-board-head .advisor-seat { flex: 1; margin: 0; }
+.advisor-board-head + .advisor-board-head { margin-top: 0; }
+.advisor-players { display: inline-flex; }
+.advisor-players button {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  padding: 8px 14px;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: background 0.15s, border-color 0.15s;
+}
+.advisor-players button:first-child { border-radius: 8px 0 0 8px; }
+.advisor-players button:last-child { border-radius: 0 8px 8px 0; border-left: 0; }
+.advisor-players button.on { border-color: var(--gold); background: rgb(245 197 66 / 0.16); color: var(--gold); }
+.advisor-players button:disabled { opacity: 0.6; cursor: default; }
+.advisor-players button.on:disabled { opacity: 1; }
+.advisor-players button:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
 .advisor-seat button:disabled { opacity: 0.6; cursor: default; }
 .advisor-seat button.on:disabled { opacity: 1; }
 .advisor-hand-input { display: block; }
