@@ -43,3 +43,5 @@ ai/.venv/
 ai/checkpoints/
 ai/logs/
 __pycache__/
+extension/dist/
+extension/model.json

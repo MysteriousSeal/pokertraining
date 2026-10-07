@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Expresso AI Coach",
+  "version": "1.0.0",
+  "description": "Runs the trained Expresso Trainer agent on your local table: suggests moves and can play them for you.",
+  "permissions": ["storage"],
+  "action": {
+    "default_title": "Expresso AI Coach",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:3000/*"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["model.json"],
+      "matches": ["http://localhost:3000/*"]
+    }
+  ]
+}

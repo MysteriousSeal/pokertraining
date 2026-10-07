@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
     "ai/.venv/**",
     "ai/checkpoints/**",
     "ai/logs/**",
+    "extension/dist/**",
   ]),
 ]);
 

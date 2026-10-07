@@ -6,13 +6,13 @@
  * driver builds the same object from the page's DOM. Both go through `featurize`,
  * so training and live play see identical inputs.
  */
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { Card, Rank, Suit } from "../lib/poker/cards";
 import { cardKey } from "../lib/poker/cards";
 import { evaluate } from "../lib/poker/evaluator";
 import { estimateEquity } from "../lib/poker/bot";
 import { type GameState, legalActions, potTotal } from "../lib/poker/engine";
+// Bundled as data so this module also runs in the browser (Chrome extension).
+import PREFLOP_EQUITY from "./preflop_equity.json";
 
 export interface SeatObs {
   stack: number;
@@ -120,12 +120,9 @@ export function parseCard(key: string): Card {
   return { rank: (RANK_OF[r] ?? Number(r)) as Rank, suit: key.slice(-1) as Suit };
 }
 
-let preflopTable: Record<string, [number, number]> | null = null;
-function preflopEquity(hole: Card[]): [number, number] {
-  if (!preflopTable) {
-    preflopTable = JSON.parse(readFileSync(join(__dirname, "preflop_equity.json"), "utf8"));
-  }
-  return preflopTable![handClass(hole)];
+const preflopTable: Record<string, number[]> = PREFLOP_EQUITY;
+function preflopEquity(hole: Card[]): number[] {
+  return preflopTable[handClass(hole)];
 }
 
 const RANK_CHARS = "23456789TJQKA";
@@ -150,6 +147,9 @@ function lastActionIndex(a: string): number {
 const oneHot = (n: number, i: number) => Array.from({ length: n }, (_, k) => (k === i ? 1 : 0));
 
 export const EQUITY_ITERATIONS = { train: 150, play: 600 };
+
+/** Position of the hand-equity value in `featurize`'s output (after 2×13 rank one-hots, suited, pair, 2 preflop equities). */
+export const EQUITY_FEATURE = 30;
 
 export function featurize(obs: Observation, equityIterations = EQUITY_ITERATIONS.train): number[] {
   const hole = obs.hole.map(parseCard);

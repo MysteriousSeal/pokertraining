@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Expresso AI Coach</title>
+    <style>
+      body {
+        width: 260px;
+        margin: 0;
+        padding: 14px;
+        background: #0b0b0d;
+        color: #f4f4f6;
+        font: 13px/1.4 system-ui, sans-serif;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0 0 12px;
+      }
+      h1 span {
+        color: #e3001b;
+      }
+      label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 9px 0;
+        border-bottom: 1px solid #24242c;
+        cursor: pointer;
+      }
+      label small {
+        display: block;
+        color: #9a9aa8;
+        font-size: 11px;
+      }
+      input[type="checkbox"],
+      input[type="range"] {
+        accent-color: #e3001b;
+      }
+      .delay {
+        display: block;
+      }
+      .delay input {
+        width: 100%;
+        margin-top: 6px;
+      }
+      .info {
+        margin-top: 10px;
+        color: #9a9aa8;
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1><span>Expresso</span> AI Coach</h1>
+    <label>
+      <span>Show suggestions<small>Recommended move and odds on the table</small></span>
+      <input type="checkbox" id="suggest" />
+    </label>
+    <label>
+      <span>Autoplay<small>Let the AI click for you</small></span>
+      <input type="checkbox" id="autoplay" />
+    </label>
+    <label class="delay">
+      <span>Autoplay delay: <b id="delayValue"></b></span>
+      <input type="range" id="delayMs" min="0" max="3000" step="100" />
+    </label>
+    <div class="info" id="info">Active on http://localhost:3000</div>
+    <script src="popup.js"></script>
+  </body>
+</html>

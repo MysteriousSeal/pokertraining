@@ -106,6 +106,28 @@ net result: +€8.00   (ROI +40.0%)
 
 Amounts are read from the game's own result screen.
 
+### Chrome extension (AI coach)
+
+`extension/` is a Chrome extension that runs the trained agent while *you* play on `http://localhost:3000`.
+It only activates on that address.
+
+- **Coach:** a panel shows the AI's recommended move, your hand's equity, and how likely the AI is to pick each action.
+- **Autoplay:** switch it on in the extension popup and the AI clicks for you. The delay is adjustable.
+
+The network runs in the page itself (no Python needed), using the same feature code as training (`ai/agent.ts`).
+
+```bash
+npm run extension          # export ai/checkpoints/best.pt → extension/model.json and build extension/dist/content.js
+```
+
+Then load it once in Chrome:
+1. Open `chrome://extensions` and turn on **Developer mode**.
+2. Click **Load unpacked** and pick the `extension/` folder.
+3. Open `http://localhost:3000` and pin the extension to reach its popup.
+
+After more training, run `npm run extension` again, then click ↻ on the extension in `chrome://extensions` and reload the game tab.
+To ship a specific checkpoint, run `ai/.venv/bin/python ai/export_weights.py --checkpoint ai/checkpoints/latest.pt && npm run extension:build`.
+
 ### Baselines
 
 ```bash
@@ -121,6 +143,8 @@ npx tsx ai/baseline.ts 2000   # win rate of random, call-only, always all-in, an
 | `ai/server.ts` | JSON bridge between Python and the TypeScript game |
 | `ai/train.py` · `ai/eval.py` · `ai/play_browser.py` | Training, evaluation, browser play |
 | `ai/checkpoints/` | `best.pt` (best win rate) and `latest.pt` (most recent); not committed |
+| `ai/export_weights.py` | Exports a checkpoint to `extension/model.json` |
+| `extension/` | Chrome extension: `src/content.ts` (coach + autoplay), `popup.html`/`popup.js`, `manifest.json` |
 
 ## Layout
 

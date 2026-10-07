@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "extension": "ai/.venv/bin/python ai/export_weights.py && npm run extension:build",
+    "extension:build": "esbuild extension/src/content.ts --bundle --format=iife --target=chrome120 --outfile=extension/dist/content.js"
   },
   "dependencies": {
     "next": "16.4.0",
@@ -15,9 +17,11 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@types/chrome": "^0.3.4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
