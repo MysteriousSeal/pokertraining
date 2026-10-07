@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { BotLevel, GameState } from "@/lib/poker/engine";
 import { ordinal } from "@/lib/poker/engine";
 import {
@@ -206,6 +207,7 @@ export function PokerApp() {
             <div className="muted">3-max hyper-turbo · play money</div>
           </div>
         </div>
+        <Link href="/advisor" className="ghost-btn">Preflop advisor</Link>
         <div className="bankroll">
           <span className="muted">Bankroll</span>
           <strong>{loaded ? formatMoney(stats.bankroll) : "—"}</strong>
