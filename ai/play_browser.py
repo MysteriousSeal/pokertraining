@@ -91,11 +91,18 @@ def main() -> None:
         page.goto(f"{args.url}/?speed={args.speed}")
         # Set the opponents once in the lobby; "Play again" keeps the setting.
         page.click(f'.buyin[data-buyin="{args.buy_in:g}"]')
+        def set_random(on: bool) -> None:
+            # Click the visible switch like a person would (the real checkbox is hidden under it).
+            if page.is_checked("#random-levels") != on:
+                page.click(".random-toggle")
+            if page.is_checked("#random-levels") != on:
+                raise RuntimeError("could not set the lobby's Random toggle")
+
         if args.level == "random":
-            page.set_checked("#random-levels", True, force=True)
+            set_random(True)
             table = "random"
         else:
-            page.set_checked("#random-levels", False, force=True)
+            set_random(False)
             page.eval_on_selector(
                 "#bot-level",
                 """(el, v) => {
