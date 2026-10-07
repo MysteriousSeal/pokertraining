@@ -28,6 +28,69 @@ Runs thousands of bot-only tournaments, checking that no chips are created or lo
 npx tsx scripts/simulate.ts 2000
 ```
 
+## AI agent
+
+A reinforcement-learning agent (PPO, PyTorch) that learns to play the Expresso table against the two bots.
+It trains in a headless simulator that runs the same TypeScript engine and bots as the browser game.
+Then it plays the real game in Chrome, reading the table from the page and clicking the buttons.
+
+**Rewards:** chips won or lost each hand (as a share of all chips in play), +1 for winning the Expresso, and −0.5 for not winning.
+
+### Setup (once)
+
+```bash
+python3 -m venv ai/.venv
+ai/.venv/bin/pip install torch numpy playwright
+npx tsx ai/gen_preflop.ts          # builds ai/preflop_equity.json (already committed)
+```
+
+### Train
+
+```bash
+ai/.venv/bin/python ai/train.py --minutes 60                      # start from a blank network
+ai/.venv/bin/python ai/train.py --resume --minutes 60             # continue from the last checkpoint
+ai/.venv/bin/python ai/train.py --resume --minutes 60 --ent 0.005 # continue, exploring less
+ai/.venv/bin/python ai/train.py --resume --minutes 60 -v          # extra detail per update
+```
+
+Each update prints the elapsed and remaining time, the games played, the win rate over the last 5,000 games, and the action mix.
+`-v` adds finishing places, hands per game, losses, entropy, KL and the learning rate.
+Ctrl+C stops cleanly and saves.
+
+### Evaluate in the simulator
+
+```bash
+ai/.venv/bin/python ai/eval.py --games 20000                                   # best.pt, most likely action
+ai/.venv/bin/python ai/eval.py --games 20000 --checkpoint ai/checkpoints/latest.pt
+ai/.venv/bin/python ai/eval.py --games 20000 --sample -v                       # sampled actions + action mix
+```
+
+### Play in the browser
+
+```bash
+npm run dev                                                        # in another terminal
+ai/.venv/bin/python ai/play_browser.py --games 100 --speed 30           # headless
+ai/.venv/bin/python ai/play_browser.py --games 20 --speed 10 --headed   # watch it play
+```
+
+`?speed=N` on the game URL fast-forwards bot thinking, pauses and the blind clock.
+
+### Baselines
+
+```bash
+npx tsx ai/baseline.ts 2000   # win rate of random, call-only, always all-in, and the table bot in the agent's seat
+```
+
+### Files
+
+| Path | What |
+| --- | --- |
+| `ai/agent.ts` | What the agent sees (table observation → input features) and its 6 actions |
+| `ai/env.ts` | Headless game from the agent's seat, rewards, blind clock |
+| `ai/server.ts` | JSON bridge between Python and the TypeScript game |
+| `ai/train.py` · `ai/eval.py` · `ai/play_browser.py` | Training, evaluation, browser play |
+| `ai/checkpoints/` | `best.pt` (best win rate) and `latest.pt` (most recent); not committed |
+
 ## Layout
 
 | Path | What |

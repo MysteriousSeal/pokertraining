@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -76,11 +78,49 @@ class Pool:
         reward = np.concatenate([r["reward"] for r in replies]).astype(np.float32)
         done = np.concatenate([r["done"] for r in replies]).astype(bool)
         place = np.concatenate([[p or 0 for p in r["place"]] for r in replies]).astype(np.int64)
+        self.hands = np.concatenate([r["hands"] for r in replies]).astype(np.int64)
         return reward, done, place
 
     def close(self) -> None:
         for s in self.servers:
             s.close()
+
+
+class Status:
+    """Console output: permanent lines, plus a live line that rewrites itself in a terminal."""
+
+    def __init__(self) -> None:
+        self.tty = sys.stdout.isatty()
+        self._last_live = 0.0
+        self._live_len = 0
+
+    def line(self, text: str = "") -> None:
+        self._clear()
+        print(text, flush=True)
+
+    def live(self, text: str, every: float = 0.2) -> None:
+        if not self.tty:
+            return
+        now = time.time()
+        if now - self._last_live < every:
+            return
+        self._last_live = now
+        self._clear()
+        sys.stdout.write(text[:200])
+        sys.stdout.flush()
+        self._live_len = min(len(text), 200)
+
+    def _clear(self) -> None:
+        if self.tty and self._live_len:
+            sys.stdout.write("\r" + " " * self._live_len + "\r")
+            self._live_len = 0
+
+
+def fmt_duration(seconds: float) -> str:
+    seconds = int(max(0, seconds))
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}h{m:02d}m" if h else f"{m}m{s:02d}s"
 
 
 class Policy(nn.Module):
