@@ -22,10 +22,12 @@ interface Model {
 interface Settings {
   suggest: boolean;
   autoplay: boolean;
-  delayMs: number;
+  /** Autoplay waits a random time in [minDelayMs, maxDelayMs] before acting, like a person thinking. */
+  minDelayMs: number;
+  maxDelayMs: number;
 }
 
-const DEFAULTS: Settings = { suggest: true, autoplay: false, delayMs: 700 };
+const DEFAULTS: Settings = { suggest: true, autoplay: false, minDelayMs: 1000, maxDelayMs: 3000 };
 let settings: Settings = { ...DEFAULTS };
 let model: Model | null = null;
 
@@ -227,7 +229,11 @@ async function tick() {
   if (settings.autoplay) {
     acting = true;
     try {
-      await sleep(settings.delayMs);
+      const lo = Math.min(settings.minDelayMs, settings.maxDelayMs);
+      const hi = Math.max(settings.minDelayMs, settings.maxDelayMs);
+      const delay = lo + Math.random() * (hi - lo);
+      panel.querySelector(".move")?.insertAdjacentHTML("afterend", `<div class="sub">Autoplay: playing in ${(delay / 1000).toFixed(1)}s…</div>`);
+      await sleep(delay);
       // Only act if the table is still waiting on the same decision.
       if (JSON.stringify(readTable()) === key) await perform(actions[best]);
     } finally {

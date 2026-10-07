@@ -112,7 +112,7 @@ Amounts are read from the game's own result screen.
 It only activates on that address.
 
 - **Coach:** a panel shows the AI's recommended move, your hand's equity, and how likely the AI is to pick each action.
-- **Autoplay:** switch it on in the extension popup and the AI clicks for you. The delay is adjustable.
+- **Autoplay:** switch it on in the extension popup and the AI clicks for you. Before each move it waits a random 1–3 s, like a person thinking. You can set the minimum and maximum in the popup.
 
 The network runs in the page itself (no Python needed), using the same feature code as training (`ai/agent.ts`).
 

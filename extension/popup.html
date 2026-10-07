@@ -41,6 +41,10 @@
       }
       .delay input {
         width: 100%;
+        margin: 2px 0 6px;
+      }
+      .delay small {
+        display: block;
         margin-top: 6px;
       }
       .info {
@@ -60,10 +64,13 @@
       <span>Autoplay<small>Let the AI click for you</small></span>
       <input type="checkbox" id="autoplay" />
     </label>
-    <label class="delay">
-      <span>Autoplay delay: <b id="delayValue"></b></span>
-      <input type="range" id="delayMs" min="0" max="3000" step="100" />
-    </label>
+    <div class="delay">
+      <span>Autoplay delay (random): <b id="delayValue"></b></span>
+      <small>Minimum</small>
+      <input type="range" id="minDelayMs" min="0" max="8000" step="100" />
+      <small>Maximum</small>
+      <input type="range" id="maxDelayMs" min="0" max="8000" step="100" />
+    </div>
     <div class="info" id="info">Active on http://localhost:3000</div>
     <script src="popup.js"></script>
   </body>
