@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GameState } from "@/lib/poker/engine";
+import type { BotLevel, GameState } from "@/lib/poker/engine";
 import { ordinal } from "@/lib/poker/engine";
 import {
   BUY_INS,
@@ -25,6 +25,13 @@ const BOT_NAMES = [
 ];
 
 const STORAGE_KEY = "expresso-trainer:v1";
+
+type Opponents = BotLevel | "mixed";
+const OPPONENTS: { id: Opponents; name: string; detail: string }[] = [
+  { id: "easy", name: "Easy bots", detail: "Simple rules, no memory" },
+  { id: "hard", name: "Hard bots", detail: "Push/fold charts, read ranges" },
+  { id: "mixed", name: "Mixed", detail: "One easy, one hard" },
+];
 const START_BANKROLL = 1000;
 
 interface Stats {
@@ -39,8 +46,8 @@ const DEFAULT_STATS: Stats = { bankroll: START_BANKROLL, played: 0, wins: 0, pro
 
 type Screen =
   | { kind: "lobby" }
-  | { kind: "wheel"; format: Format; buyIn: number; tier: MultiplierTier; reel: number[]; names: string[] }
-  | { kind: "table"; format: Format; buyIn: number; tier: MultiplierTier; names: string[]; gameId: number }
+  | { kind: "wheel"; format: Format; buyIn: number; tier: MultiplierTier; reel: number[]; names: string[]; botLevels: (BotLevel | null)[] }
+  | { kind: "table"; format: Format; buyIn: number; tier: MultiplierTier; names: string[]; botLevels: (BotLevel | null)[]; gameId: number }
   | { kind: "result"; format: Format; buyIn: number; tier: MultiplierTier; place: number; prize: number };
 
 function loadStats(): Stats {
@@ -74,6 +81,7 @@ export function PokerApp() {
   const [screen, setScreen] = useState<Screen>({ kind: "lobby" });
   const [buyIn, setBuyIn] = useState(1);
   const [formatId, setFormatId] = useState<FormatId>("expresso");
+  const [opponents, setOpponents] = useState<Opponents>("easy");
 
   useEffect(() => {
     // localStorage only exists in the browser, so load after mount.
@@ -97,11 +105,13 @@ export function PokerApp() {
     updateStats((s) => ({ ...s, bankroll: +(s.bankroll - amount).toFixed(2), played: s.played + 1, profit: +(s.profit - amount).toFixed(2) }));
     const tier = drawMultiplier(amount);
     const names = [stats.heroName || "You", ...shuffle(BOT_NAMES).slice(0, 2)];
-    setScreen({ kind: "wheel", format, buyIn: amount, tier, reel: buildReel(amount, tier.multiplier), names });
+    const levels: BotLevel[] = opponents === "mixed" ? shuffle<BotLevel>(["easy", "hard"]) : [opponents, opponents];
+    const botLevels = [null, ...levels];
+    setScreen({ kind: "wheel", format, buyIn: amount, tier, reel: buildReel(amount, tier.multiplier), names, botLevels });
   };
 
   const onWheelDone = useCallback(() => {
-    setScreen((s) => (s.kind === "wheel" ? { kind: "table", format: s.format, buyIn: s.buyIn, tier: s.tier, names: s.names, gameId: Date.now() } : s));
+    setScreen((s) => (s.kind === "wheel" ? { kind: "table", format: s.format, buyIn: s.buyIn, tier: s.tier, names: s.names, botLevels: s.botLevels, gameId: Date.now() } : s));
   }, []);
 
   const screenRef = useRef(screen);
@@ -139,6 +149,7 @@ export function PokerApp() {
       <PokerTable
         key={screen.gameId}
         names={screen.names}
+        botLevels={screen.botLevels}
         format={screen.format}
         speed={speed}
         buyIn={screen.buyIn}
@@ -205,6 +216,23 @@ export function PokerApp() {
           Three players, one winner. The prize pool is drawn before the first hand, from x2 up to {formatMoney(maxJackpot(buyIn))}{" "}
           for a {formatMoney(buyIn)} buy-in.
         </p>
+
+        <div className="formats" role="radiogroup" aria-label="Opponents">
+          {OPPONENTS.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={opponents === o.id}
+              data-opponents={o.id}
+              className={`format ${opponents === o.id ? "on" : ""}`}
+              onClick={() => setOpponents(o.id)}
+            >
+              <span className="format-name">{o.name}</span>
+              <span className="muted">{o.detail}</span>
+            </button>
+          ))}
+        </div>
 
         <div className="formats" role="radiogroup" aria-label="Format">
           {Object.values(FORMATS).map((f) => (

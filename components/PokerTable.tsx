@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { GameState } from "@/lib/poker/engine";
+import type { BotLevel, GameState } from "@/lib/poker/engine";
 import { collectedPot, potTotal } from "@/lib/poker/engine";
 import { blindsAt, formatMoney, multiplierClass, type Format, type MultiplierTier } from "@/lib/poker/expresso";
 import { useExpressoGame } from "@/hooks/useExpressoGame";
@@ -12,6 +12,7 @@ import { formatChips, formatClock } from "./format";
 
 interface Props {
   names: string[];
+  botLevels: (BotLevel | null)[];
   format: Format;
   buyIn: number;
   tier: MultiplierTier;
@@ -22,8 +23,8 @@ interface Props {
 
 const POSITIONS = ["bottom", "left", "right"] as const;
 
-export function PokerTable({ names, format, buyIn, tier, onGameOver, onQuit, speed = 1 }: Props) {
-  const { state, clock, heroId, heroToAct, heroTimeMs, act } = useExpressoGame(names, format, onGameOver, speed);
+export function PokerTable({ names, botLevels, format, buyIn, tier, onGameOver, onQuit, speed = 1 }: Props) {
+  const { state, clock, heroId, heroToAct, heroTimeMs, act } = useExpressoGame(names, format, onGameOver, speed, botLevels);
   const [inBB, setInBB] = useState(false);
   const [fourColor, setFourColor] = useState(false);
   const [showLog, setShowLog] = useState(false);

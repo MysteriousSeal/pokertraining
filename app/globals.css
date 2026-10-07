@@ -813,6 +813,24 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.bot-tag {
+  margin-left: 0.5cqw;
+  padding: 0 0.5cqw;
+  border-radius: 4px;
+  font-size: 0.8em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: 1px;
+}
+.bot-easy {
+  background: #1f6f43;
+  color: #d8ffe6;
+}
+.bot-hard {
+  background: var(--red);
+  color: #fff;
+}
 .seat-stack {
   font-family: var(--font-display);
   font-weight: 700;

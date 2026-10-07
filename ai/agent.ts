@@ -12,7 +12,10 @@ import { evaluate } from "../lib/poker/evaluator";
 import { estimateEquity } from "../lib/poker/bot";
 import { type GameState, legalActions, potTotal } from "../lib/poker/engine";
 // Bundled as data so this module also runs in the browser (Chrome extension).
-import PREFLOP_EQUITY from "./preflop_equity.json";
+import PREFLOP_EQUITY from "../lib/poker/data/preflop_equity.json";
+import { handClass } from "../lib/poker/ranges";
+
+export { handClass };
 
 export interface SeatObs {
   stack: number;
@@ -23,6 +26,8 @@ export interface SeatObs {
   dealer: boolean;
   /** "", "SB", "BB", "Check", "Call", "Bet", "Raise", "All-in", "Fold" */
   lastAction: string;
+  /** Bot level shown on the seat: "easy", "hard", or "" (the hero, or unknown). */
+  level: string;
 }
 
 export interface Observation {
@@ -95,6 +100,7 @@ export function observe(s: GameState, heroId: number): Observation {
       allIn: !p.out && p.allIn,
       dealer: s.dealer === p.id,
       lastAction: p.out ? "" : (p.lastAction ?? ""),
+      level: p.botLevel ?? "",
     };
   };
   return {
@@ -123,17 +129,6 @@ export function parseCard(key: string): Card {
 const preflopTable: Record<string, number[]> = PREFLOP_EQUITY;
 function preflopEquity(hole: Card[]): number[] {
   return preflopTable[handClass(hole)];
-}
-
-const RANK_CHARS = "23456789TJQKA";
-/** "AKs", "AKo", "QQ" */
-export function handClass([a, b]: Card[]): string {
-  const hi = Math.max(a.rank, b.rank);
-  const lo = Math.min(a.rank, b.rank);
-  const h = RANK_CHARS[hi - 2];
-  const l = RANK_CHARS[lo - 2];
-  if (hi === lo) return h + l;
-  return h + l + (a.suit === b.suit ? "s" : "o");
 }
 
 const LAST_ACTIONS = ["", "blind", "Check", "Call", "raise", "All-in", "Fold"];
@@ -236,5 +231,10 @@ export function featurize(obs: Observation, equityIterations = EQUITY_ITERATIONS
     ...oneHot(LAST_ACTIONS.length, lastActionIndex(hero.lastAction)),
     ...oneHot(LAST_ACTIONS.length, lastActionIndex(left.lastAction)),
     ...oneHot(LAST_ACTIONS.length, lastActionIndex(right.lastAction)),
+    // Opponent levels last, so models trained before they existed can be extended (ai/common.py).
+    left.level === "easy" ? 1 : 0,
+    left.level === "hard" ? 1 : 0,
+    right.level === "easy" ? 1 : 0,
+    right.level === "hard" ? 1 : 0,
   ];
 }

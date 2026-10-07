@@ -1,7 +1,7 @@
 /**
  * Line-delimited JSON bridge between the Python trainer and the TypeScript game.
  *
- *   {"cmd":"init","n":64}            -> start n simulated games
+ *   {"cmd":"init","n":64,"opponents":"mix"} -> start n simulated games (opponents: easy | hard | mix)
  *   {"cmd":"step","actions":[...]}   -> one action per game; finished games restart automatically
  *   {"cmd":"featurize","obs":{...}}  -> features for an observation read from the browser
  *
@@ -9,7 +9,7 @@
  */
 import { createInterface } from "node:readline";
 import { EQUITY_ITERATIONS, N_ACTIONS, type Observation, actionTable, featurize } from "./agent";
-import { ExpressoEnv, type StepResult } from "./env";
+import { ExpressoEnv, type Opponents, type StepResult } from "./env";
 
 let envs: ExpressoEnv[] = [];
 
@@ -28,7 +28,7 @@ function encode(results: StepResult[]) {
 function handle(msg: { cmd: string; [k: string]: unknown }) {
   switch (msg.cmd) {
     case "init": {
-      envs = Array.from({ length: msg.n as number }, () => new ExpressoEnv());
+      envs = Array.from({ length: msg.n as number }, () => new ExpressoEnv((msg.opponents as Opponents) ?? "easy"));
       const results = envs.map((e) => e.reset());
       return { ...encode(results), n_actions: N_ACTIONS };
     }

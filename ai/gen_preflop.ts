@@ -23,5 +23,5 @@ for (let hi = 2; hi <= 14; hi++) {
     }
   }
 }
-writeFileSync(join(__dirname, "preflop_equity.json"), JSON.stringify(table));
+writeFileSync(join(__dirname, "../lib/poker/data/preflop_equity.json"), JSON.stringify(table));
 console.log(`${Object.keys(table).length} hands · AA ${table.AA} · 72o ${table["72o"]}`);

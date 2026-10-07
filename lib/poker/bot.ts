@@ -1,6 +1,7 @@
 import { type Card, fullDeck, randomInt } from "./cards";
 import { evaluateScore } from "./evaluator";
 import { type Action, type GameState, legalActions, potTotal } from "./engine";
+import { decideHardBotAction } from "./botHard";
 
 /** Chen formula: quick preflop hand strength, roughly -1 (72o) to 20 (AA). */
 export function chenScore([a, b]: Card[]): number {
@@ -61,7 +62,13 @@ export function estimateEquity(hole: Card[], board: Card[], opponents: number, i
 
 const chance = (p: number) => randomInt(10_000) < p * 10_000;
 
+/** Acts for the bot whose turn it is, at that seat's level. */
 export function decideBotAction(s: GameState): Action {
+  return s.players[s.toAct!].botLevel === "hard" ? decideHardBotAction(s) : decideEasyBotAction(s);
+}
+
+/** "Easy" bot: Chen-formula preflop, equity vs random hands postflop, no memory. */
+export function decideEasyBotAction(s: GameState): Action {
   const legal = legalActions(s)!;
   const me = s.players[s.toAct!];
   const bb = s.blinds.bb;

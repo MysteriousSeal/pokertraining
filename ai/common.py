@@ -15,6 +15,9 @@ from torch import nn
 ROOT = Path(__file__).resolve().parent.parent
 CHECKPOINTS = ROOT / "ai" / "checkpoints"
 ACTIONS = ["fold", "check/call", "raise min", "raise ½ pot", "raise pot", "all-in"]
+OPPONENTS = ["mix", "easy", "hard"]
+# Number of network inputs (ai/agent.ts featurize). Older checkpoints with fewer are extended on load.
+OBS_DIM = 109
 
 
 class GameServer:
@@ -56,12 +59,12 @@ class GameServer:
 class Pool:
     """Several game servers stepped in parallel, exposed as one batch."""
 
-    def __init__(self, workers: int, envs_per_worker: int) -> None:
+    def __init__(self, workers: int, envs_per_worker: int, opponents: str = "easy") -> None:
         self.servers = [GameServer() for _ in range(workers)]
         self.n = envs_per_worker
         self.server_time = 0.0  # seconds spent waiting on game servers
         for s in self.servers:
-            s.send({"cmd": "init", "n": envs_per_worker})
+            s.send({"cmd": "init", "n": envs_per_worker, "opponents": opponents})
         replies = [s.recv() for s in self.servers]
         self.x, self.mask = self._stack(replies)
 
@@ -162,8 +165,21 @@ def save(policy: Policy, path: Path, **meta) -> None:
 
 
 def load(path: Path) -> Policy:
+    """Load a checkpoint. Models saved before newer inputs were added (e.g. opponent
+    levels) get zero weights for those inputs, so they play exactly as before and
+    can learn to use them with further training."""
     ckpt = torch.load(path, map_location="cpu")
-    policy = Policy(ckpt["obs_dim"], len(ACTIONS))
-    policy.load_state_dict(ckpt["state_dict"])
+    state = ckpt["state_dict"]
+    old_dim = ckpt["obs_dim"]
+    if old_dim < OBS_DIM:
+        w = state["body.0.weight"]
+        state["body.0.weight"] = torch.cat([w, torch.zeros(w.shape[0], OBS_DIM - old_dim)], dim=1)
+    policy = Policy(max(old_dim, OBS_DIM), len(ACTIONS))
+    policy.load_state_dict(state)
     policy.eval()
     return policy
+
+
+def checkpoint_opponents(path: Path) -> str:
+    """Which bots a checkpoint was trained against (models from before bot levels: easy)."""
+    return torch.load(path, map_location="cpu").get("meta", {}).get("opponents", "easy")

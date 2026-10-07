@@ -53,6 +53,7 @@ export function Seat(props: Props) {
       data-allin={player.allIn}
       data-dealer={isDealer}
       data-last-action={player.lastAction ?? ""}
+      data-bot-level={player.botLevel ?? ""}
     >
       <div className={`seat-cards ${isHero ? "seat-cards-hero" : ""}`}>
         {hasCards &&
@@ -75,7 +76,10 @@ export function Seat(props: Props) {
           {player.name.slice(0, 1).toUpperCase()}
         </div>
         <div className="seat-info">
-          <div className="seat-name">{player.name}</div>
+          <div className="seat-name">
+            {player.name}
+            {player.botLevel && <span className={`bot-tag bot-${player.botLevel}`}>{player.botLevel}</span>}
+          </div>
           <div className="seat-stack">
             {player.allIn && player.stack === 0 ? "All-in" : formatChips(player.stack, bb, inBB)}
           </div>

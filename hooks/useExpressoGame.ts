@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type Action, type GameState, advance, applyAction, createGame, startHand } from "@/lib/poker/engine";
+import { type Action, type BotLevel, type GameState, advance, applyAction, createGame, startHand } from "@/lib/poker/engine";
 import { decideBotAction } from "@/lib/poker/bot";
 import type { Format } from "@/lib/poker/expresso";
 import { randomInt } from "@/lib/poker/cards";
@@ -28,11 +28,17 @@ export interface ExpressoClock {
  * `speed` > 1 fast-forwards the table (bot thinking, pauses and the blind clock)
  * so automated players can train against the real UI.
  */
-export function useExpressoGame(names: string[], format: Format, onGameOver: (final: GameState) => void, speed = 1) {
+export function useExpressoGame(
+  names: string[],
+  format: Format,
+  onGameOver: (final: GameState) => void,
+  speed = 1,
+  botLevels: (BotLevel | null)[] = [],
+) {
   const heroTimeMs = speed > 1 ? Math.max(HERO_TIME_MS / speed, 5_000) : HERO_TIME_MS;
   // This component only mounts after a user action (never prerendered), so the
   // shuffle in the lazy initializer runs in the browser.
-  const [state, setState] = useState<GameState>(() => startHand(createGame(names, format.startingStack), 0));
+  const [state, setState] = useState<GameState>(() => startHand(createGame(names, format.startingStack, { botLevels }), 0));
   const [startedAt] = useState(() => Date.now());
   const [clock, setClock] = useState<ExpressoClock>({ level: 0, remaining: format.levelMs });
   const levelRef = useRef(0);

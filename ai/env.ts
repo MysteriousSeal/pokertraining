@@ -3,7 +3,7 @@
  * Same engine and bot code as the browser game; a game clock replays the
  * table's pacing so blind levels rise at the same rate as on screen.
  */
-import { type GameState, advance, applyAction, createGame, startHand } from "../lib/poker/engine";
+import { type BotLevel, type GameState, advance, applyAction, createGame, startHand } from "../lib/poker/engine";
 import { decideBotAction } from "../lib/poker/bot";
 import { FORMATS } from "../lib/poker/expresso";
 import { type Observation, actionTable, observe } from "./agent";
@@ -17,6 +17,9 @@ const CLOCK = { bot: 1.25, hero: 1.0, streetEnd: 0.65, runout: 1.3, handOverFold
 
 /** Bonus / penalty on top of the per-hand chip reward. */
 export const REWARD = { win: 1.0, lose: -0.5 };
+
+/** Which bots the agent faces: all easy, all hard, or a random mix each game. */
+export type Opponents = "easy" | "hard" | "mix";
 
 export interface StepResult {
   obs: Observation | null;
@@ -32,9 +35,17 @@ export class ExpressoEnv {
   private clock = 0;
   private settled = 0;
 
+  constructor(private opponents: Opponents = "easy") {}
+
+  private botLevels(): BotLevel[] {
+    if (this.opponents !== "mix") return [this.opponents, this.opponents];
+    // Each bot independently easy or hard: easy+easy, easy+hard and hard+hard tables.
+    return [Math.random() < 0.5 ? "easy" : "hard", Math.random() < 0.5 ? "easy" : "hard"];
+  }
+
   reset(): StepResult {
     this.clock = 0;
-    this.s = startHand(createGame(["Agent", "Bot A", "Bot B"], FORMAT.startingStack), 0);
+    this.s = startHand(createGame(["Agent", "Bot A", "Bot B"], FORMAT.startingStack, { botLevels: [null, ...this.botLevels()] }), 0);
     this.settled = FORMAT.startingStack;
     return this.runUntilDecision(0);
   }

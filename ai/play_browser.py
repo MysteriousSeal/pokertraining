@@ -29,7 +29,7 @@ READ_TABLE = """() => {
     return {
       stack: Number(d.stack), bet: Number(d.bet), out: d.out === 'true',
       folded: d.folded === 'true', allIn: d.allin === 'true', dealer: d.dealer === 'true',
-      lastAction: d.lastAction || '',
+      lastAction: d.lastAction || '', level: d.botLevel || '',
     };
   };
   const cards = (sel) => [...document.querySelectorAll(sel)].map((e) => e.dataset.card);
@@ -65,6 +65,7 @@ def main() -> None:
     ap.add_argument("--url", default="http://localhost:3000")
     ap.add_argument("--speed", type=int, default=30)
     ap.add_argument("--games", type=int, default=100)
+    ap.add_argument("--bots", choices=["easy", "hard", "mixed"], default="mixed", help="opponent level chosen in the lobby")
     ap.add_argument("--buy-in", type=float, default=1, help="stake per game in € (0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500)")
     ap.add_argument("--checkpoint", type=Path, default=CHECKPOINTS / "best.pt")
     ap.add_argument("--headed", action="store_true", help="show the browser window")
@@ -85,6 +86,7 @@ def main() -> None:
         page.add_init_script(f"localStorage.setItem('expresso-trainer:v1', JSON.stringify({json.dumps(PROFILE)}))")
         page.goto(f"{args.url}/?speed={args.speed}")
         page.click(f'.buyin[data-buyin="{args.buy_in:g}"]')
+        page.click(f'[data-opponents="{args.bots}"]')
         page.get_by_role("button", name="Play Expresso ·").click()
 
         last_decision = None

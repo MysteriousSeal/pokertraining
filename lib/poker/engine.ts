@@ -15,6 +15,30 @@ export type Phase = "betting" | "streetEnd" | "runout" | "handOver" | "gameOver"
 
 export type ActionType = "fold" | "check" | "call" | "raise";
 
+/** Strength of a computer player: "easy" (lib/poker/bot.ts) or "hard" (lib/poker/botHard.ts). */
+export type BotLevel = "easy" | "hard";
+
+/** One action in the current hand, for opponents to read (what a player at the table sees). */
+export interface HandAction {
+  street: Street;
+  player: number;
+  type: "fold" | "check" | "call" | "bet" | "raise";
+  allIn: boolean;
+  /** The player's total bet on this street after the action. */
+  to: number;
+}
+
+/** What the other players have observed about a player so far this tournament. */
+export interface PlayerStats {
+  hands: number;
+  /** Hands where they put money in preflop voluntarily. */
+  vpip: number;
+  /** Hands where they raised preflop (all-ins included). */
+  raises: number;
+  /** Hands where they went all-in preflop as a raise. */
+  shoves: number;
+}
+
 export interface Action {
   type: ActionType;
   /** For "raise": the total amount the player's bet is raised TO this street. */
@@ -41,6 +65,9 @@ export interface Player {
   raiseLocked: boolean;
   lastAction: string | null;
   place: number | null;
+  /** null for the human / AI seat. */
+  botLevel: BotLevel | null;
+  stats: PlayerStats;
 }
 
 export interface PotResult {
@@ -75,6 +102,8 @@ export interface GameState {
   handNumber: number;
   /** Last player to raise preflop this hand. */
   preflopAggressor: number | null;
+  /** Actions taken so far in this hand. */
+  history: HandAction[];
   /** Hole cards are face up (all-in with action closed, or showdown). */
   cardsExposed: boolean;
   result: HandResult | null;
@@ -96,7 +125,8 @@ export interface LegalActions {
 
 const clone = (s: GameState): GameState => ({
   ...s,
-  players: s.players.map((p) => ({ ...p, hole: p.hole.slice() })),
+  players: s.players.map((p) => ({ ...p, hole: p.hole.slice(), stats: { ...p.stats } })),
+  history: s.history.slice(),
   deck: s.deck.slice(),
   board: s.board.slice(),
   log: s.log.slice(),
@@ -135,7 +165,13 @@ function log(s: GameState, line: string) {
 
 /* --------------------------------------------------------------- lifecycle */
 
-export function createGame(names: string[], startingStack: number, heroIndex = 0): GameState {
+export interface GameOptions {
+  heroIndex?: number;
+  /** Bot level per seat (the hero's entry is ignored). Defaults to "easy". */
+  botLevels?: (BotLevel | null)[];
+}
+
+export function createGame(names: string[], startingStack: number, { heroIndex = 0, botLevels = [] }: GameOptions = {}): GameState {
   const players: Player[] = names.map((name, id) => ({
     id,
     name,
@@ -152,6 +188,8 @@ export function createGame(names: string[], startingStack: number, heroIndex = 0
     raiseLocked: false,
     lastAction: null,
     place: null,
+    botLevel: id === heroIndex ? null : (botLevels[id] ?? "easy"),
+    stats: { hands: 0, vpip: 0, raises: 0, shoves: 0 },
   }));
   return {
     players,
@@ -170,6 +208,7 @@ export function createGame(names: string[], startingStack: number, heroIndex = 0
     minRaise: 0,
     handNumber: 0,
     preflopAggressor: null,
+    history: [],
     cardsExposed: false,
     result: null,
     log: [],
@@ -185,6 +224,7 @@ export function startHand(prev: GameState, level: number): GameState {
   s.street = "preflop";
   s.result = null;
   s.preflopAggressor = null;
+  s.history = [];
   s.cardsExposed = false;
   s.deck = shuffle(fullDeck());
 
@@ -198,6 +238,7 @@ export function startHand(prev: GameState, level: number): GameState {
     p.hasActed = false;
     p.raiseLocked = false;
     p.lastAction = null;
+    if (!p.out) p.stats.hands++;
   }
 
   s.dealer = nextSeat(s, s.dealer, alive);
@@ -328,6 +369,7 @@ export function applyAction(prev: GameState, action: Action): GameState {
     }
   }
   p.hasActed = true;
+  record(s, p, type);
 
   const remaining = s.players.filter(inHand);
   if (remaining.length === 1) return awardUncontested(s, remaining[0]);
@@ -339,6 +381,19 @@ export function applyAction(prev: GameState, action: Action): GameState {
     s.toAct = nextSeat(s, s.toAct!, (o) => canAct(o) && !(o.hasActed && o.bet === s.currentBet));
   }
   return s;
+}
+
+function record(s: GameState, p: Player, type: ActionType) {
+  const kind: HandAction["type"] = type === "raise" ? (s.history.some((h) => h.street === s.street && (h.type === "bet" || h.type === "raise")) || s.street === "preflop" ? "raise" : "bet") : type;
+  if (s.street === "preflop" && (type === "call" || type === "raise")) {
+    const mine = s.history.filter((h) => h.street === "preflop" && h.player === p.id);
+    if (!mine.some((h) => h.type === "call" || h.type === "raise")) p.stats.vpip++;
+    if (type === "raise" && !mine.some((h) => h.type === "raise")) {
+      p.stats.raises++;
+      if (p.allIn) p.stats.shoves++;
+    }
+  }
+  s.history.push({ street: s.street, player: p.id, type: kind, allIn: p.allIn, to: p.bet });
 }
 
 function returnUncalled(s: GameState) {

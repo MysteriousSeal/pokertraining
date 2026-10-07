@@ -4,6 +4,11 @@
     ai/.venv/bin/python ai/train.py --resume --minutes 60   # continue from latest.pt
     add -v for losses, learning rate, finishing places and game length
 
+One model for every bot level: by default each game seats a random mix of easy and
+hard bots (--opponents mix), and the model sees each opponent's level on the table.
+Checkpoints: ai/checkpoints/latest.pt and best.pt. When best.pt was trained against
+other opponents, it is kept as best-<opponents>.pt before being replaced.
+
 Reward = chips won or lost each hand (as a share of all chips in play)
        + a bonus for winning the Expresso / a penalty for busting (see ai/env.ts).
 Ctrl+C stops cleanly and saves.
@@ -18,7 +23,9 @@ import time
 import numpy as np
 import torch
 
-from common import ACTIONS, CHECKPOINTS, Policy, Pool, Status, fmt_duration, load, save
+from pathlib import Path
+
+from common import ACTIONS, CHECKPOINTS, OPPONENTS, Policy, Pool, Status, checkpoint_opponents, fmt_duration, load, save
 
 SHORT = ["fold", "call", "min", "half", "pot", "jam"]
 
@@ -37,7 +44,9 @@ def main() -> None:
     ap.add_argument("--minibatch", type=int, default=2048)
     ap.add_argument("--clip", type=float, default=0.2)
     ap.add_argument("--ent", type=float, default=0.02, help="initial entropy bonus (decays to 10%%)")
+    ap.add_argument("--opponents", choices=OPPONENTS, default="mix", help="bots to train against (mix = random easy/hard each game)")
     ap.add_argument("--resume", action="store_true", help="continue from ai/checkpoints/latest.pt")
+    ap.add_argument("--init", type=Path, help="start from this checkpoint's weights (e.g. ai/checkpoints/best.pt)")
     ap.add_argument("-v", "--verbose", action="store_true", help="print extra training details each update")
     args = ap.parse_args()
 
@@ -48,9 +57,10 @@ def main() -> None:
 
     latest = CHECKPOINTS / "latest.pt"
     best_path = CHECKPOINTS / "best.pt"
+    out.line(f"Opponents: {args.opponents} bots · checkpoints in {CHECKPOINTS}")
     out.line(f"Starting {args.workers} game servers × {args.envs} games = {n_envs} tables…")
     t_boot = time.time()
-    pool = Pool(args.workers, args.envs)
+    pool = Pool(args.workers, args.envs, args.opponents)
     obs_dim = pool.x.shape[1]
     out.line(f"  ready in {time.time() - t_boot:.1f}s · {obs_dim} inputs · {len(ACTIONS)} actions · {T * n_envs:,} decisions per update")
 
@@ -60,15 +70,26 @@ def main() -> None:
         policy = load(latest)
         games_before = int(torch.load(latest, map_location="cpu")["meta"].get("games", 0))
         out.line(f"Resuming from {latest} ({games_before:,} games already trained)")
-        if best_path.exists():
-            # Only replace the saved best model with a better one.
-            best = torch.load(best_path, map_location="cpu")["meta"].get("win", 0.0)
-            out.line(f"  best so far: {best * 100:.1f}% ({best_path})")
+    elif args.init:
+        policy = load(args.init)
+        games_before = int(torch.load(args.init, map_location="cpu")["meta"].get("games", 0))
+        out.line(f"Starting from {args.init} ({games_before:,} games of earlier training)")
     else:
         if args.resume:
             out.line(f"No checkpoint at {latest}: starting from scratch")
         policy = Policy(obs_dim, len(ACTIONS))
         out.line("Starting from a blank network")
+
+    # Only replace best.pt with a better model, measured against the same opponents.
+    best_archive = None
+    if best_path.exists():
+        trained_vs = checkpoint_opponents(best_path)
+        if trained_vs == args.opponents:
+            best = torch.load(best_path, map_location="cpu")["meta"].get("win", 0.0)
+            out.line(f"  best so far vs {args.opponents} bots: {best * 100:.1f}% ({best_path})")
+        else:
+            best_archive = CHECKPOINTS / f"best-{trained_vs}.pt"
+            out.line(f"  {best_path.name} was trained vs {trained_vs} bots: it will be kept as {best_archive.name} when a new best replaces it")
     policy.train()
     opt = torch.optim.Adam(policy.parameters(), lr=args.lr, eps=1e-5)
     out.line(f"Training for {args.minutes:g} min · lr {args.lr:g} · entropy {args.ent:g} · Ctrl+C to stop and save\n")
@@ -90,7 +111,7 @@ def main() -> None:
     start = time.time()
 
     def checkpoint() -> None:
-        save(policy, latest, games=games_before + games, win=win)
+        save(policy, latest, games=games_before + games, win=win, opponents=args.opponents)
 
     try:
         while time.time() - start < budget:
@@ -204,7 +225,11 @@ def main() -> None:
                 )
             if len(places) >= 3000 and win > best:
                 best = win
-                save(policy, best_path, games=games_before + games, win=win)
+                if best_archive and not best_archive.exists():
+                    best_path.rename(best_archive)
+                    out.line(f"  kept the previous best model as {best_archive}")
+                best_archive = None
+                save(policy, best_path, games=games_before + games, win=win, opponents=args.opponents)
                 out.line(f"  ★ new best {win * 100:.1f}% over the last {len(places):,} games → saved {best_path}")
     except KeyboardInterrupt:
         out.line("\nStopped by Ctrl+C")
