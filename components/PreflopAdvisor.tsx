@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ACTIONS, EQUITY_FEATURE, EQUITY_ITERATIONS, actionTable, featurize, type Observation, type SeatObs } from "@/ai/agent";
-import { RANKS as RANK_ORDER, SUITS, SUIT_SYMBOL, cardKey, fullDeck, rankLabel, shuffle, type Card, type Rank, type Suit } from "@/lib/poker/cards";
+import { RANKS as RANK_ORDER, SUITS, SUIT_SYMBOL, cardKey, rankLabel, type Card, type Rank, type Suit } from "@/lib/poker/cards";
 
 type Seat = "btn" | "sb" | "bb";
 
@@ -285,6 +285,50 @@ function parseBoard(value: string): Card[] | null {
   return keys.size === cards.length ? cards : null;
 }
 
+interface DeckProps {
+  label: string;
+  /** Cards shown with the gold ring. */
+  selected: string[];
+  /** Selected cards that can no longer be changed. */
+  locked?: string[];
+  /** Cards shown faded and unclickable, e.g. the hero's own cards. */
+  taken?: string[];
+  /** Whether unselected cards can still be picked. */
+  open: boolean;
+  onPick: (card: Card) => void;
+}
+
+function DeckGrid({ label, selected, locked = [], taken = [], open, onPick }: DeckProps) {
+  return (
+    <div className="advisor-deck" role="grid" aria-label={label}>
+      {SUITS.map((suit) => (
+        <div role="row" key={suit} className="advisor-deck-row">
+          {[...RANK_ORDER].reverse().map((rank) => {
+            const card: Card = { rank, suit };
+            const key = cardKey(card);
+            const isSelected = selected.includes(key);
+            const isTaken = taken.includes(key);
+            return (
+              <button
+                type="button"
+                role="gridcell"
+                key={key}
+                className={`advisor-deck-card suit-${suit} ${isSelected ? "selected" : ""} ${isTaken ? "in-hand" : ""}`}
+                aria-selected={isSelected}
+                aria-label={`${rankLabel(rank)} of ${SUIT_NAME[suit]}${isTaken ? ", in your hand" : ""}`}
+                disabled={isTaken || locked.includes(key) || (!isSelected && !open)}
+                onClick={() => onPick(card)}
+              >
+                {rankLabel(rank)}{SUIT_SYMBOL[suit]}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function BigCard({ card, size }: { card: Card; size?: "sm" }) {
   const rank = rankLabel(card.rank) === "T" ? "10" : rankLabel(card.rank);
   return (
@@ -297,8 +341,8 @@ function BigCard({ card, size }: { card: Card; size?: "sm" }) {
 }
 
 export function PreflopAdvisor() {
-  const [hole, setHole] = useState<[Card, Card]>([{ rank: 14, suit: "s" }, { rank: 13, suit: "s" }]);
-  const [handText, setHandText] = useState("AKs");
+  const [hole, setHole] = useState<Card[]>([]);
+  const [handText, setHandText] = useState("");
   const [seat, setSeat] = useState<Seat>("sb");
   const [hand, setHand] = useState<Hand | null>(null);
   const [boardText, setBoardText] = useState("");
@@ -318,11 +362,21 @@ export function PreflopAdvisor() {
     setHandText(value);
     const cards = parseHand(value);
     if (cards) setHole(cards);
+    else if (value.trim() === "") setHole([]);
   };
 
   const pickHand = (cards: [Card, Card]) => {
     setHole(cards);
     setHandText(handLabel(cards[0], cards[1]));
+  };
+
+  // Two clicks on the deck set both cards. A selected card un-selects; once
+  // two are picked, the next click replaces the older one.
+  const pickHoleCard = (card: Card) => {
+    const key = cardKey(card);
+    const cards = holeKeys.has(key) ? hole.filter((c) => cardKey(c) !== key) : hole.length < 2 ? [...hole, card] : [hole[1], card];
+    setHole(cards);
+    setHandText(cards.map(cardKey).join(" "));
   };
 
   const updateBoard = (update: (cards: Card[]) => Card[]) => {
@@ -361,10 +415,10 @@ export function PreflopAdvisor() {
     setChosen(null);
   };
 
-  // Next hand: the button moves one seat and a fresh random hand is dealt.
+  // Next hand: the button moves one seat and the cards are cleared for the next deal.
   const nextHand = () => {
-    const [a, b] = shuffle(fullDeck());
-    pickHand([a, b]);
+    setHole([]);
+    setHandText("");
     setSeat((current) => SEATS[(SEATS.findIndex((option) => option.id === current) + 1) % SEATS.length].id);
     setPlayed((count) => count + 1);
     startOver();
@@ -381,7 +435,7 @@ export function PreflopAdvisor() {
   }, []);
 
   const advice = useMemo(
-    () => (model && street !== "over" && boardReady ? advise(model, hole, seat, hand) : null),
+    () => (model && street !== "over" && boardReady && hole.length === 2 ? advise(model, [hole[0], hole[1]], seat, hand) : null),
     [boardReady, hand, hole, model, seat, street],
   );
 
@@ -403,8 +457,8 @@ export function PreflopAdvisor() {
     );
   }, [model, seat]);
 
-  const selectedLabel = handLabel(hole[0], hole[1]);
-  const typedInvalid = handText.trim() !== "" && !parseHand(handText);
+  const selectedLabel = hole.length === 2 ? handLabel(hole[0], hole[1]) : hole.length === 1 ? "One more card" : "Pick two cards";
+  const typedInvalid = handText.trim() !== "" && !parseHand(handText) && handText !== hole.map(cardKey).join(" ");
   const boardInvalid = boardText.trim() !== "" && !parseBoard(boardText);
   const pick = advice ? (chosen !== null && advice.mask[chosen] ? chosen : advice.best) : null;
   const seatInfo = SEATS.find((option) => option.id === seat)!;
@@ -429,7 +483,7 @@ export function PreflopAdvisor() {
 
       <div className="advisor-layout">
         {preflop ? (
-          <section className="advisor-chart" aria-label="Range chart">
+          <section className={`advisor-chart ${hole.length < 2 ? "advisor-first" : ""}`} aria-label="Range chart">
             <div className="advisor-seat" role="group" aria-label="Your seat">
               {SEATS.map((option) => (
                 <button type="button" key={option.id} className={seat === option.id ? "on" : ""} aria-pressed={seat === option.id} onClick={() => setSeat(option.id)}>
@@ -439,6 +493,16 @@ export function PreflopAdvisor() {
               ))}
             </div>
 
+            <div className="advisor-deck-title">
+              <span>Your cards</span>
+              <span className="muted">Tap your two cards, or a hand in the chart below</span>
+            </div>
+            <DeckGrid label="Pick your two cards" selected={[...holeKeys]} open onPick={pickHoleCard} />
+
+            <div className="advisor-deck-title">
+              <span>Range chart</span>
+              <span className="muted">Suited above the diagonal, offsuit below</span>
+            </div>
             <div className="advisor-matrix" role="grid" aria-label="Starting hands. Suited hands above the diagonal, offsuit below, pairs on it.">
               {(matrix ?? MATRIX_RANKS.map((_, row) => MATRIX_RANKS.map((_, column) => {
                 const cards = matrixHand(row, column);
@@ -500,42 +564,23 @@ export function PreflopAdvisor() {
               </label>
             )}
 
-            <div className="advisor-deck" role="grid" aria-label="Pick board cards">
-              {SUITS.map((suit) => (
-                <div role="row" key={suit} className="advisor-deck-row">
-                  {[...RANK_ORDER].reverse().map((rank) => {
-                    const card: Card = { rank, suit };
-                    const key = cardKey(card);
-                    const onBoard = board.findIndex((c) => cardKey(c) === key);
-                    const inHand = holeKeys.has(key);
-                    const locked = onBoard >= 0 && onBoard < lockedCards(street);
-                    const full = onBoard < 0 && board.length >= boardNeeded;
-                    return (
-                      <button
-                        type="button"
-                        role="gridcell"
-                        key={key}
-                        className={`advisor-deck-card suit-${suit} ${onBoard >= 0 ? "selected" : ""} ${inHand ? "in-hand" : ""}`}
-                        aria-selected={onBoard >= 0}
-                        aria-label={`${rankLabel(rank)} of ${SUIT_NAME[suit]}${inHand ? ", in your hand" : ""}`}
-                        disabled={inHand || locked || full || street === "over"}
-                        onClick={() => toggleBoardCard(card)}
-                      >
-                        {rankLabel(rank)}{SUIT_SYMBOL[suit]}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+            <DeckGrid
+              label="Pick board cards"
+              selected={board.map(cardKey)}
+              locked={board.slice(0, lockedCards(street)).map(cardKey)}
+              taken={[...holeKeys]}
+              open={street !== "over" && board.length < boardNeeded}
+              onPick={toggleBoardCard}
+            />
           </section>
         )}
 
         <section className="advisor-verdict" aria-live="polite">
           <div className="advisor-hand">
             <div className="advisor-hand-cards">
-              <BigCard card={hole[0]} />
-              <BigCard card={hole[1]} />
+              {[0, 1].map((index) => hole[index]
+                ? <BigCard key={cardKey(hole[index])} card={hole[index]} />
+                : <span key={index} className="advisor-card-slot wanted" aria-hidden="true">{index === 0 ? "1st" : "2nd"}</span>)}
             </div>
             <div className="advisor-hand-name">
               <span className="muted">
@@ -547,6 +592,11 @@ export function PreflopAdvisor() {
 
           {error ? (
             <p className="advisor-error">{error}</p>
+          ) : hole.length < 2 ? (
+            <div className="advisor-best">
+              <span className="muted">Best move</span>
+              <strong className="pending">Pick your cards first</strong>
+            </div>
           ) : street === "over" ? (
             <div className="advisor-best">
               <span className="muted">Result</span>
@@ -599,7 +649,7 @@ export function PreflopAdvisor() {
             <div className="advisor-next">
               <button type="button" className="primary-btn" onClick={nextHand}>Next hand</button>
               <span className="muted">
-                Deals a random hand and moves the button.
+                Clears the cards and moves the button.
                 {played > 0 && <small>{played} {played === 1 ? "hand" : "hands"} played</small>}
               </span>
             </div>

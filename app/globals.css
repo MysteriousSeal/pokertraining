@@ -197,6 +197,7 @@ button:disabled {
   margin-bottom: 18px;
 }
 .advisor-hand-cards { display: flex; gap: 6px; }
+.advisor-hand-cards .advisor-card-slot { width: 58px; border-radius: 6px; }
 .advisor-card {
   position: relative;
   display: block;
@@ -326,6 +327,21 @@ button:disabled {
 .advisor-card-slot.wanted { border-color: var(--gold); color: var(--gold); }
 .advisor-board-input { margin-bottom: 16px; }
 .advisor-board-input input { font-size: 18px; }
+.advisor-deck-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 18px 0 8px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.advisor-deck-title:first-of-type { margin-top: 0; }
+.advisor-deck-title .muted { font-family: var(--font-body); font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; }
 .advisor-deck { display: grid; gap: 4px; }
 .advisor-deck-row { display: grid; grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 4px; }
 .advisor-deck-card {
@@ -380,7 +396,7 @@ button:disabled {
 @media (max-width: 860px) {
   .advisor-layout { grid-template-columns: 1fr; }
   .advisor-verdict { order: -1; }
-  .advisor-board { order: -2; }
+  .advisor-board, .advisor-first { order: -2; }
   .advisor-probabilities { margin-bottom: 14px; }
 }
 @media (max-width: 480px) {
@@ -390,7 +406,7 @@ button:disabled {
   .advisor-seat button { padding: 9px 8px; text-align: center; }
   .advisor-seat button span { display: none; }
   .advisor-seat button strong { font-size: 15px; letter-spacing: 0.02em; }
-  .advisor-card { width: 48px; }
+  .advisor-card, .advisor-hand-cards .advisor-card-slot { width: 48px; }
   .advisor-card b { font-size: 22px; }
   .advisor-card em { font-size: 32px; }
   .advisor-legend .muted { margin-left: 0; width: 100%; }
